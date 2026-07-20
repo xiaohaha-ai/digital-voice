@@ -91,6 +91,22 @@ export type PptFile = {
   slides: number
   updatedAt: string
   note: boolean
+  filePath?: string
+  preview?: PptPreview
+}
+
+export type PptSlide = {
+  index: number
+  title: string
+  text: string
+  note?: string
+}
+
+export type PptPreview = {
+  state: '已解析' | '待解析' | '解析失败'
+  parsedAt?: string
+  error?: string
+  slides: PptSlide[]
 }
 
 export const pptFiles: PptFile[] = [
@@ -104,6 +120,9 @@ export type Voice = {
   name: string
   group: '男音' | '女音' | '我的声音'
   detail: string
+  filePath?: string
+  clonedFromId?: string
+  consentRecordedAt?: string
 }
 
 export const voices: Voice[] = [

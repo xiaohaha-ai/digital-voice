@@ -2,14 +2,14 @@ import { useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Check,
   CirclePlus,
+  Copy,
   Download,
   Edit3,
+  Eye,
   FileUp,
   Filter,
   FolderOpen,
   MoreHorizontal,
-  Pause,
-  Play,
   Plus,
   Search,
   Sparkles,
@@ -69,16 +69,19 @@ type RecordingProps = {
   people: Presenter[]
   pptFiles: PptFile[]
   onUploadPpt: (file: File) => Promise<PptFile>
+  onCreatePersonFromPhoto: (file: File) => Promise<Presenter>
   onCreateCourse: (draft: Pick<Course, 'title' | 'presenter' | 'slides'>) => void
 }
 
-export function RecordingPage({ people, pptFiles, onUploadPpt, onCreateCourse }: RecordingProps) {
+export function RecordingPage({ people, pptFiles, onUploadPpt, onCreatePersonFromPhoto, onCreateCourse }: RecordingProps) {
   const [activeStep, setActiveStep] = useState(1)
   const [selectedId, setSelectedId] = useState(people[0]?.id ?? '')
   const [selectedPptId, setSelectedPptId] = useState(pptFiles[0]?.id ?? '')
   const [courseName, setCourseName] = useState('')
   const [notice, setNotice] = useState('')
   const [referenceFileName, setReferenceFileName] = useState('')
+  const [referenceImage, setReferenceImage] = useState('')
+  const [creatingPerson, setCreatingPerson] = useState(false)
   const selected = people.find((person) => person.id === selectedId) ?? people[0]
   const selectedPpt = pptFiles.find((file) => file.id === selectedPptId)
   const created = people.filter((person) => person.group === '创建的数字人')
@@ -88,6 +91,21 @@ export function RecordingPage({ people, pptFiles, onUploadPpt, onCreateCourse }:
     const ppt = await onUploadPpt(file)
     setSelectedPptId(ppt.id)
     setNotice(`已添加「${ppt.title}」到我的PPT`)
+  }
+
+  const createPersonFromPhoto = async (file: File) => {
+    setCreatingPerson(true)
+    setReferenceFileName(file.name)
+    try {
+      const person = await onCreatePersonFromPhoto(file)
+      setSelectedId(person.id)
+      setReferenceImage(person.image)
+      setNotice(`已创建数字人「${person.name}」`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '数字人创建失败')
+    } finally {
+      setCreatingPerson(false)
+    }
   }
 
   const next = () => {
@@ -113,11 +131,11 @@ export function RecordingPage({ people, pptFiles, onUploadPpt, onCreateCourse }:
         <div className="recording-layout">
           <section className="recording-new">
             <h2>新建数字人老师</h2>
-            <FilePickerButton className="reference-upload" accept="image/png,image/jpeg" ariaLabel="上传课程老师形象" onPick={(file) => { setReferenceFileName(file.name); setNotice(`已选择参考图「${file.name}」`) }}>
+            <FilePickerButton className="reference-upload" accept="image/png,image/jpeg" ariaLabel="上传课程老师形象" onPick={(file) => { void createPersonFromPhoto(file) }}>
               <CirclePlus size={36} strokeWidth={1.4} />
-              <strong>上传你的课程老师形象</strong>
+              <strong>{creatingPerson ? '正在创建数字人...' : '上传你的课程老师形象'}</strong>
               <span>{referenceFileName || '支持图片PNG/JPG'}</span>
-              <div className="reference-card"><img src={selected?.image} alt="上传照片参考图" /><small>上传照片参考图</small></div>
+              <div className="reference-card"><img src={referenceImage || selected?.image} alt="上传照片参考图" /><small>上传照片参考图</small></div>
             </FilePickerButton>
           </section>
           <section className="presenter-picker">
@@ -131,7 +149,7 @@ export function RecordingPage({ people, pptFiles, onUploadPpt, onCreateCourse }:
       )}
       {activeStep === 2 && (
         <div className="single-step-panel">
-          <div className="upload-panel"><UploadCloud size={48} /><h2>上传一个新的PPT</h2><p>支持 PPT/PPTX，单个文件不超过 500MB</p><FilePickerButton className="primary-button" accept=".ppt,.pptx" ariaLabel="选择本地PPT文件" onPick={onFile}>选择本地文件</FilePickerButton></div>
+          <div className="upload-panel"><UploadCloud size={48} /><h2>上传一个新的PPT</h2><p>支持可解析的 PPTX，单个文件不超过 500MB</p><FilePickerButton className="primary-button" accept=".pptx" ariaLabel="选择本地PPTX文件" onPick={onFile}>选择本地文件</FilePickerButton></div>
           <div className="field-line"><label>选择已有课件</label><select value={selectedPptId} onChange={(event) => setSelectedPptId(event.target.value)}><option value="">请选择课件</option>{pptFiles.map((file) => <option value={file.id} key={file.id}>{file.title} · {file.slides} 页</option>)}</select></div>
         </div>
       )}
@@ -177,11 +195,13 @@ export function CoursewarePage({ courses, onUpdateCourses, onCreate }: { courses
   )
 }
 
-export function PptLibraryPage({ files, onUpload, onRemove }: { files: PptFile[]; onUpload: (file: File) => Promise<PptFile>; onRemove: (ids: string[]) => void }) {
+export function PptLibraryPage({ files, onUpload, onPreview, onRemove }: { files: PptFile[]; onUpload: (file: File) => Promise<PptFile>; onPreview: (id: string) => Promise<{ id: string; title: string; filePath?: string; preview?: PptFile['preview'] }>; onRemove: (ids: string[]) => void }) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [active, setActive] = useState('全部')
   const [toast, setToast] = useState('')
+  const [previewing, setPreviewing] = useState<PptFile | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const shownFiles = useMemo(() => files.filter((file) => file.title.toLowerCase().includes(search.toLowerCase())), [files, search])
   const upload = async (file: File) => {
     const ppt = await onUpload(file)
@@ -189,29 +209,59 @@ export function PptLibraryPage({ files, onUpload, onRemove }: { files: PptFile[]
   }
   const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
   const remove = () => { onRemove(selected); setSelected([]); setToast('已删除所选PPT') }
+  const preview = async (file: PptFile) => {
+    setPreviewing(file)
+    setPreviewLoading(true)
+    try {
+      const result = await onPreview(file.id)
+      setPreviewing({ ...file, filePath: result.filePath ?? file.filePath, preview: result.preview })
+    } catch (error) {
+      setPreviewing(null)
+      setToast(error instanceof Error ? error.message : 'PPT 预览加载失败')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
   return (
     <section className="library-page">
-      <PageToolbar><SearchBox value={search} onChange={setSearch} placeholder="搜索课件" /><FilterTabs tabs={['全部', '我的', '课题组共享']} active={active} onChange={setActive} /><span className="toolbar-spacer" /><FilePickerButton className="primary-button" accept=".ppt,.pptx" ariaLabel="新增PPT文件" onPick={upload}><Plus size={17} />新增PPT</FilePickerButton><button className="ghost-button danger" disabled={!selected.length} onClick={remove} type="button"><Trash2 size={16} />批量删除</button></PageToolbar>
-      <div className="ppt-table"><div className="ppt-head"><span></span><span>课件名称</span><span>页数</span><span>更新时间</span><span>操作</span></div>{shownFiles.map((file) => <div className="ppt-row" key={file.id}><input type="checkbox" checked={selected.includes(file.id)} onChange={() => toggle(file.id)} aria-label={`选择${file.title}`} /><div className="ppt-name"><span className="ppt-file-icon"><FileUp size={20} /></span><div><strong>{file.title}</strong>{file.note && <small>有备注</small>}</div></div><span>{file.slides} 页</span><span>{file.updatedAt}</span><div className="row-actions"><button type="button" title="置顶" onClick={() => setToast(`已置顶「${file.title}」`)}>置顶</button><button type="button" title="导出PPT" onClick={() => setToast(`已准备导出「${file.title}」`)}><Download size={16} /></button><button type="button" title="编辑名称" onClick={() => setToast(`请在课程信息中修改「${file.title}」名称`)}><Edit3 size={16} /></button></div></div>)}{shownFiles.length === 0 && <div className="empty-state"><FolderOpen size={34} />没有匹配的PPT文件</div>}</div>
+      <PageToolbar><SearchBox value={search} onChange={setSearch} placeholder="搜索课件" /><FilterTabs tabs={['全部', '我的', '课题组共享']} active={active} onChange={setActive} /><span className="toolbar-spacer" /><FilePickerButton className="primary-button" accept=".pptx" ariaLabel="新增PPTX文件" onPick={upload}><Plus size={17} />新增PPT</FilePickerButton><button className="ghost-button danger" disabled={!selected.length} onClick={remove} type="button"><Trash2 size={16} />批量删除</button></PageToolbar>
+      <div className="ppt-table"><div className="ppt-head"><span></span><span>课件名称</span><span>页数</span><span>更新时间</span><span>操作</span></div>{shownFiles.map((file) => <div className="ppt-row" key={file.id}><input type="checkbox" checked={selected.includes(file.id)} onChange={() => toggle(file.id)} aria-label={`选择${file.title}`} /><div className="ppt-name"><span className="ppt-file-icon"><FileUp size={20} /></span><div><strong>{file.title}</strong>{file.note && <small>有备注</small>}</div></div><span>{file.slides} 页</span><span>{file.updatedAt}</span><div className="row-actions"><button type="button" title="预览PPT" onClick={() => { void preview(file) }}><Eye size={16} /></button><button type="button" title="导出PPT" onClick={() => setToast(`已准备导出「${file.title}」`)}><Download size={16} /></button><button type="button" title="编辑名称" onClick={() => setToast(`请在课程信息中修改「${file.title}」名称`)}><Edit3 size={16} /></button></div></div>)}{shownFiles.length === 0 && <div className="empty-state"><FolderOpen size={34} />没有匹配的PPT文件</div>}</div>
+      {previewing && <div className="modal-backdrop" role="presentation" onMouseDown={() => setPreviewing(null)}><section className="ppt-preview-modal" role="dialog" aria-modal="true" aria-labelledby="ppt-preview-title" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" type="button" aria-label="关闭PPT预览" onClick={() => setPreviewing(null)}><X size={18} /></button><div className="ppt-preview-heading"><div><span className="modal-kicker">PPTX 解析预览</span><h2 id="ppt-preview-title">{previewing.title}</h2><p>{previewing.slides} 页课件{previewing.note ? ' · 含备注' : ''}</p></div>{previewing.filePath && <a className="ghost-button" href={previewing.filePath} target="_blank" rel="noreferrer"><Download size={16} />打开原文件</a>}</div>{previewLoading && <div className="preview-empty">正在解析课件内容...</div>}{!previewLoading && previewing.preview?.state === '已解析' && <div className="ppt-slide-list">{previewing.preview.slides.map((slide) => <article className="ppt-slide-preview" key={slide.index}><strong>{slide.index}</strong><div><h3>{slide.title}</h3>{slide.text && <p>{slide.text}</p>}{slide.note && <small>备注：{slide.note}</small>}</div></article>)}</div>}{!previewLoading && previewing.preview?.state !== '已解析' && <div className="preview-empty">{previewing.preview?.error || '该课件暂未解析，可重新上传 PPTX 文件。'}</div>}</section></div>}
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </section>
   )
 }
 
-export function DigitalPeoplePage({ people, onCreate, onUploadImage, onRemove }: { people: Presenter[]; onCreate: (person: Presenter) => void; onUploadImage: (file: File) => Promise<string>; onRemove: (id: string) => void }) {
-  const [tab, setTab] = useState<'image' | 'video'>('image')
+export function DigitalPeoplePage({ people, onCreate, onGenerate, onUploadImage, onRemove }: { people: Presenter[]; onCreate: (person: Presenter) => void; onGenerate: (input: { name: string; prompt: string; referenceImage?: string }) => Promise<Presenter>; onUploadImage: (file: File) => Promise<string>; onRemove: (id: string) => void }) {
+  const [tab, setTab] = useState<'image' | 'prompt'>('image')
   const [name, setName] = useState('')
+  const [prompt, setPrompt] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [preview, setPreview] = useState(people[1]?.image ?? '')
   const [toast, setToast] = useState('')
   const [imageFileName, setImageFileName] = useState('')
   const [audioFileName, setAudioFileName] = useState('')
-  const create = () => {
+  const [generating, setGenerating] = useState(false)
+  const create = async () => {
     if (!name.trim()) return setToast('请先填写形象名称')
-    onCreate({ id: crypto.randomUUID(), name: name.trim(), tone: tab === 'image' ? '图片生成' : '绿幕视频', image: preview || people[0]?.image || '', group: '创建的数字人' })
-    setName('')
-    setToast('数字人已创建，可在AI录课中选择')
+    if (!prompt.trim()) {
+      onCreate({ id: crypto.randomUUID(), name: name.trim(), tone: '图片创建', image: preview || people[0]?.image || '', group: '创建的数字人' })
+      setName('')
+      return setToast('数字人已创建，可在AI录课中选择')
+    }
+    setGenerating(true)
+    try {
+      await onGenerate({ name: name.trim(), prompt: prompt.trim(), referenceImage: preview.startsWith('/uploads/') ? preview : undefined })
+      setName('')
+      setPrompt('')
+      setImageFileName('')
+      setToast('AI数字人形象已生成，可在AI录课中选择')
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : '数字人形象生成失败')
+    } finally {
+      setGenerating(false)
+    }
   }
   const updatePreview = async (file: File) => {
     setPreview(await onUploadImage(file))
@@ -223,14 +273,15 @@ export function DigitalPeoplePage({ people, onCreate, onUploadImage, onRemove }:
   return (
     <section className="people-page">
       <aside className="create-panel">
-        <div className="segment-tabs"><button className={tab === 'image' ? 'active' : ''} onClick={() => setTab('image')} type="button">上传图片</button><button className={tab === 'video' ? 'active' : ''} onClick={() => setTab('video')} type="button">上传绿幕视频</button></div>
-        <h2>{tab === 'image' ? '方式一：上传图片生成绿幕视频 + 音频' : '方式二：上传绿幕视频生成音频'}</h2>
+        <div className="segment-tabs"><button className={tab === 'image' ? 'active' : ''} onClick={() => setTab('image')} type="button">上传参考照片</button><button className={tab === 'prompt' ? 'active' : ''} onClick={() => setTab('prompt')} type="button">AI提示词生成</button></div>
+        <h2>{tab === 'image' ? '上传照片，保留人物特征生成数字人形象' : '描述希望生成的数字人老师形象'}</h2>
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="请输入形象名称" />
-        <FilePickerButton className="create-upload" accept={tab === 'image' ? 'image/png,image/jpeg' : 'video/mp4'} ariaLabel={tab === 'image' ? '上传头像或半身照' : '上传绿幕视频'} onPick={updatePreview}>
-          <UploadCloud size={28} /><strong>{tab === 'image' ? '上传头像或半身照' : '上传绿幕视频'}</strong><span>{imageFileName || (tab === 'image' ? '支持 JPG/PNG（竖屏图片）' : '支持 MP4（绿幕视频）')}</span>
+        <FilePickerButton className="create-upload" accept="image/png,image/jpeg" ariaLabel="上传头像或半身照" onPick={updatePreview}>
+          <UploadCloud size={28} /><strong>上传头像或半身照</strong><span>{imageFileName || '支持 JPG/PNG（竖屏图片）'}</span>
         </FilePickerButton>
+        <textarea className="generation-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={800} placeholder="描述形象特征、职业、服装与讲解风格" />
         <FilePickerButton className="audio-file" accept="audio/*" ariaLabel="上传数字人音频" onPick={(file) => { setAudioFileName(file.name); setToast(`已选择音频文件「${file.name}」`) }}><FileAudioIcon /><span>{audioFileName || '上传音频'}</span></FilePickerButton>
-        <button className="primary-button full" type="button" onClick={create}>创建数字人</button>
+        <button className="primary-button full" type="button" disabled={generating} onClick={() => { void create() }}>{generating ? '正在生成形象...' : prompt.trim() ? '生成数字人形象' : '创建数字人'}</button>
         <div className="quota"><span>名额</span><strong>{created.length} / 4</strong><small>含额外名额 1 个</small></div>
       </aside>
       <section className="people-library"><PageToolbar><SearchBox value={search} onChange={setSearch} placeholder="搜索数字人" /><span className="toolbar-spacer" /><button className="ghost-button danger" disabled={!selected} type="button" onClick={() => { if (selected) { onRemove(selected); setSelected(null); setToast('已删除数字人') } }}><Trash2 size={16} />批量删除数字人</button><button className="ghost-button" disabled={!selected} type="button" onClick={() => setToast('当前数字人已进入编辑状态')}><Edit3 size={16} />编辑数字人</button></PageToolbar><h2>创建的数字人 <span>（{created.length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '创建的数字人').map((person) => <AvatarTile selected={selected === person.id} onClick={() => setSelected(person.id)} presenter={person} key={person.id} />)}</div><h2>公共数字人 <span>（{visible.filter((person) => person.group === '公共数字人').length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '公共数字人').map((person) => <AvatarTile selected={selected === person.id} onClick={() => setSelected(person.id)} presenter={person} key={person.id} />)}</div></section>
@@ -241,10 +292,13 @@ export function DigitalPeoplePage({ people, onCreate, onUploadImage, onRemove }:
 
 function FileAudioIcon() { return <FileUp size={18} /> }
 
-export function AudioLibraryPage({ voices, onUpload, onRemove }: { voices: Voice[]; onUpload: (file: File) => Promise<Voice>; onRemove: (ids: string[]) => void }) {
-  const [playing, setPlaying] = useState<string | null>(null)
+export function AudioLibraryPage({ voices, onUpload, onClone, onRemove }: { voices: Voice[]; onUpload: (file: File) => Promise<Voice>; onClone: (id: string, input: { name: string; consent: boolean }) => Promise<Voice>; onRemove: (ids: string[]) => void }) {
   const [selected, setSelected] = useState<string[]>([])
   const [toast, setToast] = useState('')
+  const [clonePanelOpen, setClonePanelOpen] = useState(false)
+  const [cloneName, setCloneName] = useState('')
+  const [cloneConsent, setCloneConsent] = useState(false)
+  const [cloning, setCloning] = useState(false)
   const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
   const upload = async (file: File) => {
     const voice = await onUpload(file)
@@ -252,18 +306,38 @@ export function AudioLibraryPage({ voices, onUpload, onRemove }: { voices: Voice
   }
   const remove = () => { onRemove(selected); setSelected([]); setToast('已删除所选声音') }
   const myVoices = voices.filter((voice) => voice.group === '我的声音')
+  const cloneSource = selected.length === 1 ? myVoices.find((voice) => voice.id === selected[0] && voice.filePath) : undefined
+  const clone = async () => {
+    if (!cloneSource) return
+    if (!cloneName.trim()) return setToast('请输入克隆声音名称')
+    if (!cloneConsent) return setToast('请确认拥有该声音的克隆授权')
+    setCloning(true)
+    try {
+      const voice = await onClone(cloneSource.id, { name: cloneName.trim(), consent: cloneConsent })
+      setSelected([voice.id])
+      setCloneName('')
+      setCloneConsent(false)
+      setClonePanelOpen(false)
+      setToast(`已创建克隆声音「${voice.name}」`)
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : '音频克隆失败')
+    } finally {
+      setCloning(false)
+    }
+  }
   return (
     <section className="audio-page">
-      <div className="voice-toolbar"><div><h2>我的声音</h2><p>上传或选择音频，用于生成数字人讲解。</p></div><div className="voice-actions"><button type="button" disabled={!selected.length} onClick={() => setToast('已进入声音编辑状态')}><Edit3 size={16} />编辑</button><button type="button" onClick={() => setSelected(selected.length === voices.length ? [] : voices.map((voice) => voice.id))}>全选</button><button className="danger" type="button" disabled={!selected.length} onClick={remove}><Trash2 size={16} />删除</button></div></div>
+      <div className="voice-toolbar"><div><h2>我的声音</h2><p>上传、试听或克隆已授权的参考声音。</p></div><div className="voice-actions"><button type="button" disabled={!cloneSource} onClick={() => setClonePanelOpen(true)}><Copy size={16} />克隆声音</button><button type="button" disabled={!selected.length} onClick={() => setToast('已进入声音编辑状态')}><Edit3 size={16} />编辑</button><button type="button" onClick={() => setSelected(selected.length === voices.length ? [] : voices.map((voice) => voice.id))}>全选</button><button className="danger" type="button" disabled={!selected.length} onClick={remove}><Trash2 size={16} />删除</button></div></div>
       <FilePickerButton className="voice-upload" accept="audio/mpeg,audio/wav,audio/x-m4a" ariaLabel="上传声音文件" onPick={upload}><Plus size={26} /><strong>上传声音</strong><span>支持 MP3、WAV</span></FilePickerButton>
-      {myVoices.length > 0 && <VoiceSection group="我的声音" voices={myVoices} selected={selected} playing={playing} onSelect={toggle} onPlay={setPlaying} />}
-      <VoiceSection group="男音" voices={voices.filter((voice) => voice.group === '男音')} selected={selected} playing={playing} onSelect={toggle} onPlay={setPlaying} />
-      <VoiceSection group="女音" voices={voices.filter((voice) => voice.group === '女音')} selected={selected} playing={playing} onSelect={toggle} onPlay={setPlaying} />
+      {clonePanelOpen && cloneSource && <section className="clone-panel"><div><strong>克隆参考：{cloneSource.name}</strong><span>仅限已获得授权的声音</span></div><input type="text" value={cloneName} onChange={(event) => setCloneName(event.target.value)} placeholder="请输入克隆声音名称" /><label><input type="checkbox" checked={cloneConsent} onChange={(event) => setCloneConsent(event.target.checked)} />我确认拥有该声音的克隆授权</label><button className="primary-button" type="button" disabled={cloning} onClick={() => { void clone() }}>{cloning ? '正在克隆...' : '创建克隆声音'}</button><button className="ghost-button" type="button" onClick={() => setClonePanelOpen(false)}>取消</button></section>}
+      {myVoices.length > 0 && <VoiceSection group="我的声音" voices={myVoices} selected={selected} onSelect={toggle} />}
+      <VoiceSection group="男音" voices={voices.filter((voice) => voice.group === '男音')} selected={selected} onSelect={toggle} />
+      <VoiceSection group="女音" voices={voices.filter((voice) => voice.group === '女音')} selected={selected} onSelect={toggle} />
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </section>
   )
 }
 
-function VoiceSection({ group, voices, selected, playing, onSelect, onPlay }: { group: string; voices: Voice[]; selected: string[]; playing: string | null; onSelect: (id: string) => void; onPlay: (id: string | null) => void }) {
-  return <section className="voice-section"><h2>{group === '我的声音' ? '我的声音文件' : '公共声音'} <span>{group === '我的声音' ? `（${voices.length} 个）` : group}</span></h2><div className="voice-grid">{voices.map((voice) => <article className={`voice-card ${selected.includes(voice.id) ? 'selected' : ''}`} key={voice.id} onClick={() => onSelect(voice.id)}><button className="play-button" onClick={(event) => { event.stopPropagation(); onPlay(playing === voice.id ? null : voice.id) }} type="button" aria-label={`试听${voice.name}`}>{playing === voice.id ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button><div><strong>{voice.name}</strong><p>{voice.detail}</p></div></article>)}</div></section>
+function VoiceSection({ group, voices, selected, onSelect }: { group: string; voices: Voice[]; selected: string[]; onSelect: (id: string) => void }) {
+  return <section className="voice-section"><h2>{group === '我的声音' ? '我的声音文件' : '公共声音'} <span>{group === '我的声音' ? `（${voices.length} 个）` : group}</span></h2><div className="voice-grid">{voices.map((voice) => <article className={`voice-card ${selected.includes(voice.id) ? 'selected' : ''}`} key={voice.id} onClick={() => onSelect(voice.id)}><div><strong>{voice.name}</strong><p>{voice.detail}</p>{voice.filePath ? <audio controls preload="metadata" src={voice.filePath} onClick={(event) => event.stopPropagation()} /> : <small>暂无可试听音频</small>}</div></article>)}</div></section>
 }

@@ -87,6 +87,19 @@ function App() {
     void api.createPerson(person).catch(() => undefined)
   }
 
+  const createPersonFromPhoto = async (file: File) => {
+    const uploaded = await api.uploadImage(file)
+    const person = await api.createPerson({ id: crypto.randomUUID(), name: file.name.replace(/\.(png|jpe?g)$/i, ''), tone: '照片创建', image: uploaded.filePath, group: '创建的数字人' })
+    setPeople((current) => [person, ...current.filter((item) => item.id !== person.id)])
+    return person
+  }
+
+  const generatePerson = async ({ name, prompt, referenceImage }: { name: string; prompt: string; referenceImage?: string }) => {
+    const person = await api.generateDigitalPerson({ name, prompt, referenceImage })
+    setPeople((current) => [person, ...current.filter((item) => item.id !== person.id)])
+    return person
+  }
+
   const uploadImage = async (file: File) => {
     try {
       const uploaded = await api.uploadImage(file)
@@ -108,6 +121,18 @@ function App() {
     }
   }
 
+  const previewPpt = async (id: string) => {
+    const preview = await api.getPptPreview(id)
+    setPptList((current) => current.map((ppt) => ppt.id === id ? { ...ppt, filePath: preview.filePath ?? ppt.filePath, preview: preview.preview } : ppt))
+    return preview
+  }
+
+  const cloneVoice = async (id: string, input: { name: string; consent: boolean }) => {
+    const voice = await api.cloneVoice(id, input)
+    setVoiceList((current) => [voice, ...current.filter((item) => item.id !== voice.id)])
+    return voice
+  }
+
   const updateCourses = (nextCourses: Course[]) => {
     const changed = nextCourses.find((nextCourse) => courseList.find((course) => course.id === nextCourse.id)?.status !== nextCourse.status)
     setCourseList(nextCourses)
@@ -120,11 +145,11 @@ function App() {
       <div className="app-body">
         <Sidebar page={page} onNavigate={navigate} />
         <main className="page-viewport">
-          {page === 'recording' && <RecordingPage people={people} pptFiles={pptList} onUploadPpt={uploadPpt} onCreateCourse={addCourse} />}
+          {page === 'recording' && <RecordingPage people={people} pptFiles={pptList} onUploadPpt={uploadPpt} onCreatePersonFromPhoto={createPersonFromPhoto} onCreateCourse={addCourse} />}
           {page === 'courseware' && <CoursewarePage courses={courseList} onUpdateCourses={updateCourses} onCreate={() => navigate('recording')} />}
-          {page === 'ppt' && <PptLibraryPage files={pptList} onUpload={uploadPpt} onRemove={(ids) => { setPptList((current) => current.filter((file) => !ids.includes(file.id))); ids.forEach((id) => void api.deletePpt(id).catch(() => undefined)) }} />}
-          {page === 'people' && <DigitalPeoplePage people={people} onCreate={createPerson} onUploadImage={uploadImage} onRemove={(id) => { setPeople((current) => current.filter((person) => person.id !== id)); void api.deletePerson(id).catch(() => undefined) }} />}
-          {page === 'audio' && <AudioLibraryPage voices={voiceList} onUpload={uploadVoice} onRemove={(ids) => { setVoiceList((current) => current.filter((voice) => !ids.includes(voice.id))); ids.forEach((id) => void api.deleteVoice(id).catch(() => undefined)) }} />}
+          {page === 'ppt' && <PptLibraryPage files={pptList} onUpload={uploadPpt} onPreview={previewPpt} onRemove={(ids) => { setPptList((current) => current.filter((file) => !ids.includes(file.id))); ids.forEach((id) => void api.deletePpt(id).catch(() => undefined)) }} />}
+          {page === 'people' && <DigitalPeoplePage people={people} onCreate={createPerson} onGenerate={generatePerson} onUploadImage={uploadImage} onRemove={(id) => { setPeople((current) => current.filter((person) => person.id !== id)); void api.deletePerson(id).catch(() => undefined) }} />}
+          {page === 'audio' && <AudioLibraryPage voices={voiceList} onUpload={uploadVoice} onClone={cloneVoice} onRemove={(ids) => { setVoiceList((current) => current.filter((voice) => !ids.includes(voice.id))); ids.forEach((id) => void api.deleteVoice(id).catch(() => undefined)) }} />}
         </main>
       </div>
     </div>

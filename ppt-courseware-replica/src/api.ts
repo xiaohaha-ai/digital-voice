@@ -1,4 +1,4 @@
-import type { Course, PptFile, Presenter, Voice } from './data'
+import type { Course, PptFile, PptPreview, Presenter, Voice } from './data'
 
 export type BootstrapData = {
   courses: Course[]
@@ -6,6 +6,15 @@ export type BootstrapData = {
   people: Presenter[]
   voices: Voice[]
 }
+
+export type GenerateDigitalPersonInput = {
+  name: string
+  prompt: string
+  referenceImage?: string
+}
+
+type DeleteResult = { id: string; deleted: true }
+export type PptPreviewResponse = Pick<PptFile, 'id' | 'title' | 'filePath'> & { preview?: PptPreview }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, init)
@@ -30,12 +39,16 @@ export const api = {
   bootstrap: () => request<BootstrapData>('/bootstrap'),
   createPpt: (ppt: PptFile) => request<PptFile>('/ppts', json('POST', ppt)),
   uploadPpt: (file: File) => request<PptFile>('/uploads/ppt', fileBody(file)),
-  deletePpt: (id: string) => request<void>(`/ppts/${id}`, { method: 'DELETE' }),
+  getPptPreview: (id: string) => request<PptPreviewResponse>(`/ppts/${id}/preview`),
+  parsePpt: (id: string) => request<PptFile>(`/ppts/${id}/parse`, json('POST', {})),
+  deletePpt: (id: string) => request<DeleteResult>(`/ppts/${id}`, { method: 'DELETE' }),
   createCourse: (course: Course) => request<Course>('/courses', json('POST', course)),
   updateCourse: (id: string, update: Pick<Course, 'status' | 'title'>) => request<Course>(`/courses/${id}`, json('PATCH', update)),
   createPerson: (person: Presenter) => request<Presenter>('/people', json('POST', person)),
   uploadImage: (file: File) => request<{ filePath: string }>('/uploads/image', fileBody(file)),
-  deletePerson: (id: string) => request<void>(`/people/${id}`, { method: 'DELETE' }),
+  generateDigitalPerson: (input: GenerateDigitalPersonInput) => request<Presenter>('/digital-people/generate', json('POST', input)),
+  deletePerson: (id: string) => request<DeleteResult>(`/people/${id}`, { method: 'DELETE' }),
   uploadVoice: (file: File) => request<Voice>('/uploads/audio', fileBody(file)),
-  deleteVoice: (id: string) => request<void>(`/voices/${id}`, { method: 'DELETE' }),
+  cloneVoice: (id: string, input: { name: string; consent: boolean }) => request<Voice>(`/voices/${id}/clone`, json('POST', input)),
+  deleteVoice: (id: string) => request<DeleteResult>(`/voices/${id}`, { method: 'DELETE' }),
 }
