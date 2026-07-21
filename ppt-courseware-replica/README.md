@@ -61,6 +61,33 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Create `/opt/digital-person/.env.local` with `AVATAR_PROVIDER=volcengine`, the Volcano Engine credentials, and `VOLCENGINE_PUBLIC_UPLOAD_BASE_URL=http://your-public-ip/uploads` before starting the service. Use an HTTPS domain before accepting real user portraits or voice recordings in production.
 
+### Service Control and Logs
+
+After updating the service file on the server, reload systemd once:
+
+```bash
+sudo cp deploy/systemd/digital-person.service /etc/systemd/system/digital-person.service
+sudo systemctl daemon-reload
+```
+
+Use these commands to manage the API service:
+
+```bash
+sudo systemctl start digital-person
+sudo systemctl stop digital-person
+sudo systemctl restart digital-person
+sudo systemctl status digital-person --no-pager
+```
+
+Show the latest 100 API log lines or keep the log stream open:
+
+```bash
+sudo journalctl -u digital-person -n 100 --no-pager
+sudo journalctl -u digital-person -f --no-pager
+```
+
+The API writes each completed request to the system journal in this form: `[request] POST /api/avatars/generate 202 143ms`. Request bodies, uploaded file names, and credentials are intentionally not logged.
+
 For slide summaries and scripts, `POST /api/ppts/{id}/scripts/generate` uses deterministic mock text by default. Set `LLM_PROVIDER=remote`, `LLM_BASE_URL`, and `LLM_MODEL` only when intentionally enabling an OpenAI-compatible local or cloud LLM endpoint.
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.

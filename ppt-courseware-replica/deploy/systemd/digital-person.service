@@ -9,6 +9,9 @@ Environment=NODE_ENV=production
 ExecStart=/usr/bin/npm run server
 Restart=on-failure
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=digital-person
 
 [Install]
 WantedBy=multi-user.target

@@ -63,6 +63,14 @@ const uploadImage = uploadFor({ extensions: ['.jpg', '.jpeg', '.png'], maxSize: 
 const uploadAudio = uploadFor({ extensions: ['.mp3', '.wav', '.m4a'], maxSize: 100 * 1024 * 1024, label: 'MP3/WAV/M4A' })
 
 app.disable('x-powered-by')
+app.use((request, response, next) => {
+  const startedAt = Date.now()
+  response.on('finish', () => {
+    const durationMs = Date.now() - startedAt
+    console.log(`[request] ${request.method} ${request.path} ${response.statusCode} ${durationMs}ms`)
+  })
+  next()
+})
 app.use(cors({ origin: true }))
 app.use(express.json({ limit: '1mb' }))
 app.use('/uploads', express.static(uploadsDirectory))
