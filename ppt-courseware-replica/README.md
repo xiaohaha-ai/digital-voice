@@ -88,6 +88,36 @@ sudo journalctl -u digital-person -f --no-pager
 
 The API writes each completed request to the system journal in this form: `[request] POST /api/avatars/generate 202 143ms`. Request bodies, uploaded file names, and credentials are intentionally not logged.
 
+### Automated Release Deployment
+
+Pushing to the `release` branch starts the `Deploy release` GitHub Actions workflow. The workflow validates the build, connects to `/opt/digital-person` over SSH, then runs `deploy/scripts/deploy-release.sh` to update the release branch, install dependencies, build the app, restart `digital-person`, and check `/api/health`.
+
+Before the first release push, add these repository secrets in GitHub under **Settings > Secrets and variables > Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `DEPLOY_HOST` | ECS public IP address or domain name |
+| `DEPLOY_PORT` | SSH port, normally `22` |
+| `DEPLOY_USER` | SSH deployment account, such as `root` or a dedicated `deploy` user |
+| `DEPLOY_SSH_PRIVATE_KEY` | Private key for the deployment account; use a dedicated key rather than a personal key |
+| `DEPLOY_SSH_KNOWN_HOSTS` | Trusted server host-key line for the host and port above |
+
+Obtain `DEPLOY_SSH_KNOWN_HOSTS` from a trusted machine, verify it against the server fingerprint, and then paste the whole output into the secret:
+
+```bash
+ssh-keyscan -p 22 -H your-server.example
+```
+
+The deployment account must be able to run `git pull` in `/opt/digital-person`. When it is not `root`, allow non-interactive `sudo` for `install` and `systemctl`, or adapt `deploy/scripts/deploy-release.sh` to your server's privilege policy. `.env.local` remains on the server and is not replaced by the workflow.
+
+Until all five secrets are configured, a release push intentionally skips deployment and reports that setup is incomplete. Once configured, use this release flow:
+
+```bash
+git switch release
+git merge main
+git push origin release
+```
+
 For slide summaries and scripts, `POST /api/ppts/{id}/scripts/generate` uses deterministic mock text by default. Set `LLM_PROVIDER=remote`, `LLM_BASE_URL`, and `LLM_MODEL` only when intentionally enabling an OpenAI-compatible local or cloud LLM endpoint.
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
