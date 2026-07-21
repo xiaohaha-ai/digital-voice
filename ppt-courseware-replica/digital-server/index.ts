@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { ensureStore, readStore, removeStoredUpload, storedUploadPath, updateStore, uploadsDirectory } from './store.js'
 import { createDigitalPersonImage, ImageGenerationError } from './image-generation.js'
+import { generateMuseTalkAvatar, generatePptScripts, getProviderStatuses, getRemoteJob, ModelProviderError, removeBackground, resolveAvatarJob, synthesizeWithCosyVoice } from './model-providers.js'
 import { parsePptx, PptParseError } from './ppt-parser.js'
 import { cloneVoiceFromReference, VoiceCloneError } from './voice-cloning.js'
 import type { Course, CourseStatus, PptFile, Presenter, Voice } from './types.js'
@@ -148,6 +149,12 @@ async function parseStoredPpt(id: string, force = false) {
 }
 
 app.get('/api/health', (_request, response) => response.json({ ok: true }))
+app.get('/api/providers/status', asyncRoute(async (_request, response) => response.json({ providers: await getProviderStatuses() })))
+app.get('/api/jobs/:id', asyncRoute(async (request, response) => {
+  const jobId = routeId(request.params.id)
+  if (!identifierPattern.test(jobId)) return invalid(response, '任务 ID 格式无效')
+  response.json(await getRemoteJob(jobId))
+}))
 app.get('/api/bootstrap', asyncRoute(async (_request, response) => response.json(await readStore())))
 
 app.get('/api/ppts', asyncRoute(async (_request, response) => response.json((await readStore()).ppts)))
@@ -211,6 +218,30 @@ app.get('/api/ppts/:id/preview', asyncRoute(async (request, response) => {
 app.post('/api/ppts/:id/parse', asyncRoute(async (request, response) => {
   const ppt = await parseStoredPpt(routeId(request.params.id), true)
   response.status(200).json(ppt)
+}))
+app.post('/api/ppts/:id/scripts/generate', asyncRoute(async (request, response) => {
+  const body = bodyOf(request)
+  const pptId = routeId(request.params.id)
+  const ppt = await parseStoredPpt(pptId)
+  if (!ppt.preview?.slides.length) throw new ApiError(422, 'PPT 没有可用于生成口播稿的页面内容')
+  const duration = hasOwn(body, 'targetDurationSeconds') ? body.targetDurationSeconds : undefined
+  if (duration !== undefined && (typeof duration !== 'number' || !Number.isSafeInteger(duration) || duration < 5 || duration > 600)) return invalid(response, '目标时长必须是 5 到 600 秒')
+  const result = await generatePptScripts({
+    slides: ppt.preview.slides,
+    language: hasOwn(body, 'language') ? text(body.language, '语言', 32) : undefined,
+    tone: hasOwn(body, 'tone') ? text(body.tone, '语气', 80) : undefined,
+    audience: hasOwn(body, 'audience') ? text(body.audience, '受众', 80) : undefined,
+    targetDurationSeconds: duration as number | undefined,
+  })
+  const scriptByIndex = new Map(result.scripts.map((script) => [script.index, script]))
+  const updated = await updateStore((store) => {
+    const item = store.ppts.find((candidate) => candidate.id === pptId)
+    if (!item?.preview) throw new ApiError(404, 'PPT 不存在')
+    item.preview.slides = item.preview.slides.map((slide) => ({ ...slide, ...scriptByIndex.get(slide.index) }))
+    item.updatedAt = now()
+    return item
+  })
+  response.status(200).json({ id: updated.id, provider: result.provider, model: result.model, slides: updated.preview?.slides ?? [] })
 }))
 app.delete('/api/ppts/:id', asyncRoute(async (request, response) => {
   const removed = await updateStore((store) => {
@@ -304,6 +335,10 @@ app.post('/api/uploads/image', uploadImage.single('file'), asyncRoute(async (req
   await validateImageUpload(request.file)
   response.status(200).json({ filePath: `/uploads/${request.file.filename}`, originalName: uploadedFilename(request.file.originalname) })
 }))
+app.post('/api/uploads/avatar-audio', uploadAudio.single('file'), asyncRoute(async (request, response) => {
+  if (!request.file) return invalid(response, '请选择音频文件')
+  response.status(200).json({ filePath: `/uploads/${request.file.filename}`, originalName: uploadedFilename(request.file.originalname) })
+}))
 app.post('/api/digital-people/generate', asyncRoute(async (request, response) => {
   const body = bodyOf(request)
   const name = text(body.name, '数字人名称')
@@ -323,13 +358,89 @@ app.post('/api/digital-people/generate', asyncRoute(async (request, response) =>
   }
   response.status(200).json(person)
 }))
+app.post('/api/digital-people/avatar', asyncRoute(async (request, response) => {
+  const body = bodyOf(request)
+  if (body.consent !== true) return invalid(response, '请确认你拥有该人物肖像和音频的使用授权')
+  const name = text(body.name, '数字人名称')
+  const portraitPath = text(body.portraitPath, '人物图片路径', 512)
+  const audioPath = text(body.audioPath, '配音文件路径', 512)
+  if (!portraitPath.startsWith('/uploads/') || !audioPath.startsWith('/uploads/')) return invalid(response, '人物图片和配音必须使用已上传文件')
+
+  const result = await generateMuseTalkAvatar({ portraitPath, audioPath })
+  if (result.status === 'completed' && !result.filePath) throw new ApiError(502, '数字人视频 Provider 未返回 MP4 文件')
+  if (result.status === 'queued' && !result.jobId) throw new ApiError(502, '数字人视频 Provider 未返回可查询的任务 ID')
+  const person: Presenter = {
+    id: randomUUID(),
+    name,
+    tone: '口型同步视频',
+    image: portraitPath,
+    portraitPath,
+    audioPath,
+    videoPath: result.filePath,
+    videoStatus: result.status === 'completed' ? 'ready' : 'processing',
+    videoMessage: result.message,
+    generationJobId: result.jobId,
+    provider: result.provider,
+    model: result.model,
+    createdAt: now(),
+    group: '创建的数字人',
+  }
+  await updateStore((store) => {
+    uniqueId(person.id, store.people, '数字人')
+    store.people.unshift(person)
+  })
+  response.status(result.status === 'queued' ? 202 : 201).json(person)
+}))
+app.get('/api/people/:id/video-status', asyncRoute(async (request, response) => {
+  const id = routeId(request.params.id)
+  const current = (await readStore()).people.find((person) => person.id === id)
+  if (!current) return response.status(404).json({ message: '数字人不存在' })
+  if (current.videoStatus !== 'processing' || !current.generationJobId) return response.json(current)
+
+  try {
+    const result = await resolveAvatarJob(current.generationJobId, current.provider)
+    if (result.status === 'queued') {
+      const pending = await updateStore((store) => {
+        const person = store.people.find((item) => item.id === id)
+        if (!person) throw new ApiError(404, '数字人不存在')
+        person.videoMessage = result.message
+        return person
+      })
+      return response.json(pending)
+    }
+    if (!result.filePath) throw new ApiError(502, '数字人视频 Provider 未返回 MP4 文件')
+    const ready = await updateStore((store) => {
+      const person = store.people.find((item) => item.id === id)
+      if (!person) throw new ApiError(404, '数字人不存在')
+      person.videoPath = result.filePath
+      person.videoStatus = 'ready'
+      person.videoMessage = result.message
+      person.provider = result.provider
+      person.model = result.model
+      delete person.generationJobId
+      return person
+    })
+    response.json(ready)
+  } catch (error) {
+    if (!(error instanceof ModelProviderError) || error.status === 503) throw error
+    const failed = await updateStore((store) => {
+      const person = store.people.find((item) => item.id === id)
+      if (!person) throw new ApiError(404, '数字人不存在')
+      person.videoStatus = 'failed'
+      person.videoMessage = error.message
+      delete person.generationJobId
+      return person
+    })
+    response.json(failed)
+  }
+}))
 app.delete('/api/people/:id', asyncRoute(async (request, response) => {
   const removed = await updateStore((store) => {
     const index = store.people.findIndex((person) => person.id === request.params.id)
     if (index < 0) throw new ApiError(404, '数字人不存在')
     return store.people.splice(index, 1)[0]
   })
-  await removeStoredUpload(removed.image)
+  await Promise.all([...new Set([removed.image, removed.portraitPath, removed.audioPath, removed.videoPath])].map((filePath) => removeStoredUpload(filePath)))
   response.status(200).json({ id: removed.id, deleted: true })
 }))
 
@@ -382,6 +493,26 @@ app.post('/api/voices/:id/clone', asyncRoute(async (request, response) => {
   }
   response.status(200).json(voice)
 }))
+app.post('/api/voices/:id/synthesize', asyncRoute(async (request, response) => {
+  const body = bodyOf(request)
+  if (body.consent !== true) return invalid(response, '请确认你拥有该声音的使用授权')
+  const reference = (await readStore()).voices.find((voice) => voice.id === request.params.id)
+  if (!reference) return response.status(404).json({ message: '声音不存在' })
+  if (reference.group !== '我的声音' || !reference.filePath) return invalid(response, '仅支持使用本人上传的声音作为配音参考')
+  const speed = hasOwn(body, 'speed') ? body.speed : undefined
+  if (speed !== undefined && (typeof speed !== 'number' || !Number.isFinite(speed) || speed < 0.5 || speed > 2)) return invalid(response, '语速必须在 0.5 到 2 之间')
+  const result = await synthesizeWithCosyVoice({
+    referenceAudioPath: reference.filePath,
+    text: text(body.text, '配音文本', 8_000),
+    speed: speed as number | undefined,
+    emotion: hasOwn(body, 'emotion') ? text(body.emotion, '情绪', 40) : undefined,
+  })
+  if (result.status === 'queued') return response.status(202).json(result)
+  if (!result.filePath) throw new ApiError(502, '声音 Provider 未返回音频文件')
+  const voice: Voice = { id: randomUUID(), name: `${reference.name} · 配音`, group: '我的声音', detail: `${result.model} · ${result.provider}`, filePath: result.filePath, clonedFromId: reference.id, consentRecordedAt: now() }
+  await updateStore((store) => store.voices.unshift(voice))
+  response.status(201).json({ ...result, voice })
+}))
 app.post('/api/uploads/audio', uploadAudio.single('file'), asyncRoute(async (request, response) => {
   if (!request.file) return invalid(response, '请选择音频文件')
   const voice: Voice = { id: randomUUID(), name: path.parse(uploadedFilename(request.file.originalname)).name, group: '我的声音', detail: '已上传音频 · 本地文件', filePath: `/uploads/${request.file.filename}` }
@@ -392,6 +523,31 @@ app.post('/api/uploads/audio', uploadAudio.single('file'), asyncRoute(async (req
     throw error
   }
   response.status(200).json(voice)
+}))
+app.post('/api/avatars/generate', asyncRoute(async (request, response) => {
+  const body = bodyOf(request)
+  if (body.consent !== true) return invalid(response, '请确认你拥有该人物肖像的使用授权')
+  const portraitPath = text(body.portraitPath, '人物图片路径', 512)
+  const audioPath = text(body.audioPath, '配音文件路径', 512)
+  if (!portraitPath.startsWith('/uploads/') || !audioPath.startsWith('/uploads/')) return invalid(response, '人物图片和配音必须使用已上传文件')
+  const result = await generateMuseTalkAvatar({ portraitPath, audioPath })
+  response.status(result.status === 'queued' ? 202 : 201).json(result)
+}))
+app.post('/api/backgrounds/remove', asyncRoute(async (request, response) => {
+  const body = bodyOf(request)
+  const sourcePath = text(body.sourcePath, '输入文件路径', 512)
+  const kind = body.kind
+  const mode = body.mode
+  if (kind !== 'image' && kind !== 'video') return invalid(response, 'kind 必须是 image 或 video')
+  if (mode !== 'transparent' && mode !== 'color' && mode !== 'image') return invalid(response, 'mode 必须是 transparent、color 或 image')
+  if (!sourcePath.startsWith('/uploads/')) return invalid(response, '输入文件必须使用已上传文件')
+  const backgroundPath = hasOwn(body, 'backgroundPath') ? text(body.backgroundPath, '背景图片路径', 512) : undefined
+  if (backgroundPath && !backgroundPath.startsWith('/uploads/')) return invalid(response, '背景图片必须使用已上传文件')
+  const backgroundColor = hasOwn(body, 'backgroundColor') ? text(body.backgroundColor, '背景颜色', 7) : undefined
+  if (mode === 'color' && !backgroundColor) return invalid(response, '纯色背景需要提供 backgroundColor')
+  if (backgroundColor && !/^#[0-9a-fA-F]{6}$/.test(backgroundColor)) return invalid(response, '背景颜色必须是 #RRGGBB 格式')
+  const result = await removeBackground({ sourcePath, kind, mode, backgroundPath, backgroundColor })
+  response.status(result.status === 'queued' ? 202 : 201).json(result)
 }))
 app.delete('/api/voices/:id', asyncRoute(async (request, response) => {
   const removed = await updateStore((store) => {
@@ -406,6 +562,7 @@ app.delete('/api/voices/:id', asyncRoute(async (request, response) => {
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   if (error instanceof ApiError) return response.status(error.status).json({ message: error.message })
   if (error instanceof ImageGenerationError) return response.status(error.status).json({ message: error.message })
+  if (error instanceof ModelProviderError) return response.status(error.status).json({ message: error.message })
   if (error instanceof PptParseError) return response.status(422).json({ message: error.message })
   if (error instanceof VoiceCloneError) return response.status(error.status).json({ message: error.message })
   if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') return response.status(413).json({ message: '上传文件超过大小限制' })

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import { api } from './api'
-import { Header, Sidebar } from './components'
+import { Sidebar } from './components'
 import { courses, navItems, pptFiles, presenters, voices, type Course, type PptFile, type Presenter, type Voice } from './data'
 import { AudioLibraryPage, CoursewarePage, DigitalPeoplePage, PptLibraryPage, RecordingPage } from './pages'
 
@@ -82,11 +82,6 @@ function App() {
     navigate('courseware')
   }
 
-  const createPerson = (person: Presenter) => {
-    setPeople((current) => [person, ...current])
-    void api.createPerson(person).catch(() => undefined)
-  }
-
   const createPersonFromPhoto = async (file: File) => {
     const uploaded = await api.uploadImage(file)
     const person = await api.createPerson({ id: crypto.randomUUID(), name: file.name.replace(/\.(png|jpe?g)$/i, ''), tone: '照片创建', image: uploaded.filePath, group: '创建的数字人' })
@@ -94,20 +89,27 @@ function App() {
     return person
   }
 
-  const generatePerson = async ({ name, prompt, referenceImage }: { name: string; prompt: string; referenceImage?: string }) => {
-    const person = await api.generateDigitalPerson({ name, prompt, referenceImage })
+  const generateAvatarVideo = async (input: { name: string; portraitPath: string; audioPath: string; consent: boolean }) => {
+    const person = await api.generateAvatarVideo(input)
     setPeople((current) => [person, ...current.filter((item) => item.id !== person.id)])
     return person
   }
 
   const uploadImage = async (file: File) => {
-    try {
-      const uploaded = await api.uploadImage(file)
-      return uploaded.filePath
-    } catch {
-      return URL.createObjectURL(file)
-    }
+    const uploaded = await api.uploadImage(file)
+    return uploaded.filePath
   }
+
+  const uploadAvatarAudio = async (file: File) => {
+    const uploaded = await api.uploadAvatarAudio(file)
+    return uploaded.filePath
+  }
+
+  const refreshAvatarVideo = useCallback(async (id: string) => {
+    const person = await api.getAvatarVideoStatus(id)
+    setPeople((current) => current.map((item) => item.id === person.id ? person : item))
+    return person
+  }, [setPeople])
 
   const uploadVoice = async (file: File) => {
     try {
@@ -141,14 +143,13 @@ function App() {
 
   return (
     <div className="app-frame">
-      <Header />
       <div className="app-body">
         <Sidebar page={page} onNavigate={navigate} />
         <main className="page-viewport">
           {page === 'recording' && <RecordingPage people={people} pptFiles={pptList} onUploadPpt={uploadPpt} onCreatePersonFromPhoto={createPersonFromPhoto} onCreateCourse={addCourse} />}
           {page === 'courseware' && <CoursewarePage courses={courseList} onUpdateCourses={updateCourses} onCreate={() => navigate('recording')} />}
           {page === 'ppt' && <PptLibraryPage files={pptList} onUpload={uploadPpt} onPreview={previewPpt} onRemove={(ids) => { setPptList((current) => current.filter((file) => !ids.includes(file.id))); ids.forEach((id) => void api.deletePpt(id).catch(() => undefined)) }} />}
-          {page === 'people' && <DigitalPeoplePage people={people} onCreate={createPerson} onGenerate={generatePerson} onUploadImage={uploadImage} onRemove={(id) => { setPeople((current) => current.filter((person) => person.id !== id)); void api.deletePerson(id).catch(() => undefined) }} />}
+          {page === 'people' && <DigitalPeoplePage people={people} onGenerateAvatar={generateAvatarVideo} onUploadImage={uploadImage} onUploadAudio={uploadAvatarAudio} onRefreshAvatar={refreshAvatarVideo} onRemove={(id) => { setPeople((current) => current.filter((person) => person.id !== id)); void api.deletePerson(id).catch(() => undefined) }} />}
           {page === 'audio' && <AudioLibraryPage voices={voiceList} onUpload={uploadVoice} onClone={cloneVoice} onRemove={(ids) => { setVoiceList((current) => current.filter((voice) => !ids.includes(voice.id))); ids.forEach((id) => void api.deleteVoice(id).catch(() => undefined)) }} />}
         </main>
       </div>

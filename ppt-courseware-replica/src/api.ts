@@ -13,6 +13,13 @@ export type GenerateDigitalPersonInput = {
   referenceImage?: string
 }
 
+export type GenerateAvatarVideoInput = {
+  name: string
+  portraitPath: string
+  audioPath: string
+  consent: boolean
+}
+
 type DeleteResult = { id: string; deleted: true }
 export type PptPreviewResponse = Pick<PptFile, 'id' | 'title' | 'filePath'> & { preview?: PptPreview }
 
@@ -46,7 +53,10 @@ export const api = {
   updateCourse: (id: string, update: Pick<Course, 'status' | 'title'>) => request<Course>(`/courses/${id}`, json('PATCH', update)),
   createPerson: (person: Presenter) => request<Presenter>('/people', json('POST', person)),
   uploadImage: (file: File) => request<{ filePath: string }>('/uploads/image', fileBody(file)),
+  uploadAvatarAudio: (file: File) => request<{ filePath: string }>('/uploads/avatar-audio', fileBody(file)),
   generateDigitalPerson: (input: GenerateDigitalPersonInput) => request<Presenter>('/digital-people/generate', json('POST', input)),
+  generateAvatarVideo: (input: GenerateAvatarVideoInput) => request<Presenter>('/digital-people/avatar', json('POST', input)),
+  getAvatarVideoStatus: (id: string) => request<Presenter>(`/people/${id}/video-status`),
   deletePerson: (id: string) => request<DeleteResult>(`/people/${id}`, { method: 'DELETE' }),
   uploadVoice: (file: File) => request<Voice>('/uploads/audio', fileBody(file)),
   cloneVoice: (id: string, input: { name: string; consent: boolean }) => request<Voice>(`/voices/${id}/clone`, json('POST', input)),

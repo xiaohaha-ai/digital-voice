@@ -1,0 +1,14 @@
+[Unit]
+Description=Digital Person API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/digital-person
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

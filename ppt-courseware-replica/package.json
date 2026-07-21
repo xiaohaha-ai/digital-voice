@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "tsx digital-server/index.ts",
+    "server": "node --env-file-if-exists=.env.local --import tsx digital-server/index.ts",
     "dev:full": "concurrently -k -n api,web -c yellow,cyan \"npm run server\" \"npm run dev -- --host 127.0.0.1 --port 5173\"",
     "server:check": "tsc -p tsconfig.server.json",
     "build": "tsc -b && npm run server:check && vite build",

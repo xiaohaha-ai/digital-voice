@@ -1,6 +1,8 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  AlertCircle,
   Check,
+  CirclePlay,
   CirclePlus,
   Copy,
   Download,
@@ -9,6 +11,7 @@ import {
   FileUp,
   Filter,
   FolderOpen,
+  LoaderCircle,
   MoreHorizontal,
   Plus,
   Search,
@@ -232,59 +235,119 @@ export function PptLibraryPage({ files, onUpload, onPreview, onRemove }: { files
   )
 }
 
-export function DigitalPeoplePage({ people, onCreate, onGenerate, onUploadImage, onRemove }: { people: Presenter[]; onCreate: (person: Presenter) => void; onGenerate: (input: { name: string; prompt: string; referenceImage?: string }) => Promise<Presenter>; onUploadImage: (file: File) => Promise<string>; onRemove: (id: string) => void }) {
-  const [tab, setTab] = useState<'image' | 'prompt'>('image')
+function DigitalPersonVideoCard({ person, selected, onSelect, onPreview }: { person: Presenter; selected: boolean; onSelect: () => void; onPreview: () => void }) {
+  const state = person.videoStatus ?? (person.videoPath ? 'ready' : undefined)
+  const statusLabel = state === 'processing' ? '正在生成口型视频' : state === 'ready' ? 'MP4 已生成' : state === 'failed' ? '生成失败' : '尚未生成视频'
+  return <article className={`digital-person-card ${selected ? 'selected' : ''}`}>
+    <div className="digital-person-media">
+      {person.videoPath
+        ? <video controls preload="metadata" poster={person.image} src={person.videoPath} onClick={(event) => event.stopPropagation()} />
+        : <><img src={person.image} alt={person.name} />{state === 'processing' && <span className="video-processing"><LoaderCircle size={18} />生成中</span>}{state === 'failed' && <span className="video-failed"><AlertCircle size={17} />失败</span>}</>}
+    </div>
+    <div className="digital-person-card-footer">
+      <button className="digital-person-select" type="button" onClick={onSelect} aria-pressed={selected}><strong>{person.name}</strong><span>{statusLabel}</span></button>
+      {person.videoPath && <button className="video-preview-button" type="button" aria-label={`预览${person.name}的数字人视频`} title="预览 MP4 视频" onClick={onPreview}><CirclePlay size={19} /></button>}
+    </div>
+    {state === 'failed' && person.videoMessage && <p className="digital-person-error">{person.videoMessage}</p>}
+  </article>
+}
+
+export function DigitalPeoplePage({ people, onGenerateAvatar, onUploadImage, onUploadAudio, onRefreshAvatar, onRemove }: { people: Presenter[]; onGenerateAvatar: (input: { name: string; portraitPath: string; audioPath: string; consent: boolean }) => Promise<Presenter>; onUploadImage: (file: File) => Promise<string>; onUploadAudio: (file: File) => Promise<string>; onRefreshAvatar: (id: string) => Promise<Presenter>; onRemove: (id: string) => void }) {
   const [name, setName] = useState('')
-  const [prompt, setPrompt] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
-  const [preview, setPreview] = useState(people[1]?.image ?? '')
+  const [preview, setPreview] = useState('')
+  const [portraitPath, setPortraitPath] = useState('')
+  const [audioPath, setAudioPath] = useState('')
   const [toast, setToast] = useState('')
   const [imageFileName, setImageFileName] = useState('')
   const [audioFileName, setAudioFileName] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [uploading, setUploading] = useState<'image' | 'audio' | null>(null)
+  const [consent, setConsent] = useState(false)
+  const [previewing, setPreviewing] = useState<Presenter | null>(null)
   const create = async () => {
     if (!name.trim()) return setToast('请先填写形象名称')
-    if (!prompt.trim()) {
-      onCreate({ id: crypto.randomUUID(), name: name.trim(), tone: '图片创建', image: preview || people[0]?.image || '', group: '创建的数字人' })
-      setName('')
-      return setToast('数字人已创建，可在AI录课中选择')
-    }
+    if (!portraitPath || !audioPath) return setToast('请先上传头像和音频')
+    if (!consent) return setToast('请确认拥有肖像和音频的使用授权')
     setGenerating(true)
     try {
-      await onGenerate({ name: name.trim(), prompt: prompt.trim(), referenceImage: preview.startsWith('/uploads/') ? preview : undefined })
+      const person = await onGenerateAvatar({ name: name.trim(), portraitPath, audioPath, consent })
       setName('')
-      setPrompt('')
+      setPreview('')
+      setPortraitPath('')
+      setAudioPath('')
       setImageFileName('')
-      setToast('AI数字人形象已生成，可在AI录课中选择')
+      setAudioFileName('')
+      setConsent(false)
+      setSelected(person.id)
+      setToast(person.videoStatus === 'ready' ? '数字人口型同步 MP4 已生成' : '已提交数字人口型同步视频任务')
     } catch (error) {
-      setToast(error instanceof Error ? error.message : '数字人形象生成失败')
+      setToast(error instanceof Error ? error.message : '数字人视频生成失败')
     } finally {
       setGenerating(false)
     }
   }
   const updatePreview = async (file: File) => {
-    setPreview(await onUploadImage(file))
-    setImageFileName(file.name)
-    setToast(`已选择形象文件「${file.name}」`)
+    setUploading('image')
+    try {
+      const filePath = await onUploadImage(file)
+      setPreview(filePath)
+      setPortraitPath(filePath)
+      setImageFileName(file.name)
+      setToast(`已上传形象文件「${file.name}」`)
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : '形象文件上传失败')
+    } finally {
+      setUploading(null)
+    }
+  }
+  const updateAudio = async (file: File) => {
+    setUploading('audio')
+    try {
+      setAudioPath(await onUploadAudio(file))
+      setAudioFileName(file.name)
+      setToast(`已上传音频文件「${file.name}」`)
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : '音频文件上传失败')
+    } finally {
+      setUploading(null)
+    }
   }
   const visible = people.filter((person) => person.name.includes(search))
   const created = people.filter((person) => person.group === '创建的数字人')
+  const processingIds = people.filter((person) => person.videoStatus === 'processing' && person.generationJobId).map((person) => person.id).join(',')
+  useEffect(() => {
+    if (!processingIds) return
+    const refresh = async () => {
+      for (const id of processingIds.split(',')) {
+        try {
+          await onRefreshAvatar(id)
+        } catch {
+          // A temporary worker outage should not change the persisted task state.
+        }
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 3_000)
+    return () => window.clearInterval(timer)
+  }, [onRefreshAvatar, processingIds])
   return (
     <section className="people-page">
       <aside className="create-panel">
-        <div className="segment-tabs"><button className={tab === 'image' ? 'active' : ''} onClick={() => setTab('image')} type="button">上传参考照片</button><button className={tab === 'prompt' ? 'active' : ''} onClick={() => setTab('prompt')} type="button">AI提示词生成</button></div>
-        <h2>{tab === 'image' ? '上传照片，保留人物特征生成数字人形象' : '描述希望生成的数字人老师形象'}</h2>
+        <h2>上传头像与音频，生成口型同步的 MP4 数字人视频</h2>
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="请输入形象名称" />
         <FilePickerButton className="create-upload" accept="image/png,image/jpeg" ariaLabel="上传头像或半身照" onPick={updatePreview}>
-          <UploadCloud size={28} /><strong>上传头像或半身照</strong><span>{imageFileName || '支持 JPG/PNG（竖屏图片）'}</span>
+          <UploadCloud size={28} /><strong>{uploading === 'image' ? '正在上传头像...' : '上传头像或半身照'}</strong><span>{imageFileName || '支持 JPG/PNG，建议正面竖屏图片'}</span>
         </FilePickerButton>
-        <textarea className="generation-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={800} placeholder="描述形象特征、职业、服装与讲解风格" />
-        <FilePickerButton className="audio-file" accept="audio/*" ariaLabel="上传数字人音频" onPick={(file) => { setAudioFileName(file.name); setToast(`已选择音频文件「${file.name}」`) }}><FileAudioIcon /><span>{audioFileName || '上传音频'}</span></FilePickerButton>
-        <button className="primary-button full" type="button" disabled={generating} onClick={() => { void create() }}>{generating ? '正在生成形象...' : prompt.trim() ? '生成数字人形象' : '创建数字人'}</button>
+        {preview && <img className="portrait-preview" src={preview} alt="待生成数字人的头像预览" />}
+        <FilePickerButton className="audio-file" accept="audio/mpeg,audio/wav,audio/x-m4a" ariaLabel="上传数字人音频" onPick={updateAudio}><FileAudioIcon /><span>{uploading === 'audio' ? '正在上传音频...' : audioFileName || '上传音频（MP3/WAV/M4A）'}</span></FilePickerButton>
+        <label className="avatar-consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />我确认拥有该肖像和音频的使用授权</label>
+        <button className="primary-button full" type="button" disabled={generating || Boolean(uploading)} onClick={() => { void create() }}><Video size={17} />{generating ? '正在创建数字人...' : '创建数字人'}</button>
         <div className="quota"><span>名额</span><strong>{created.length} / 4</strong><small>含额外名额 1 个</small></div>
       </aside>
-      <section className="people-library"><PageToolbar><SearchBox value={search} onChange={setSearch} placeholder="搜索数字人" /><span className="toolbar-spacer" /><button className="ghost-button danger" disabled={!selected} type="button" onClick={() => { if (selected) { onRemove(selected); setSelected(null); setToast('已删除数字人') } }}><Trash2 size={16} />批量删除数字人</button><button className="ghost-button" disabled={!selected} type="button" onClick={() => setToast('当前数字人已进入编辑状态')}><Edit3 size={16} />编辑数字人</button></PageToolbar><h2>创建的数字人 <span>（{created.length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '创建的数字人').map((person) => <AvatarTile selected={selected === person.id} onClick={() => setSelected(person.id)} presenter={person} key={person.id} />)}</div><h2>公共数字人 <span>（{visible.filter((person) => person.group === '公共数字人').length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '公共数字人').map((person) => <AvatarTile selected={selected === person.id} onClick={() => setSelected(person.id)} presenter={person} key={person.id} />)}</div></section>
+      <section className="people-library"><PageToolbar><SearchBox value={search} onChange={setSearch} placeholder="搜索数字人" /><span className="toolbar-spacer" /><button className="ghost-button danger" disabled={!selected} type="button" onClick={() => { if (selected) { onRemove(selected); setSelected(null); setToast('已删除数字人') } }}><Trash2 size={16} />删除数字人</button><button className="ghost-button" disabled={!selected} type="button" onClick={() => setToast('当前数字人已进入编辑状态')}><Edit3 size={16} />编辑数字人</button></PageToolbar><h2>创建的数字人 <span>（{created.length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '创建的数字人').map((person) => <DigitalPersonVideoCard selected={selected === person.id} onSelect={() => setSelected(person.id)} onPreview={() => setPreviewing(person)} person={person} key={person.id} />)}</div><h2>公共数字人 <span>（{visible.filter((person) => person.group === '公共数字人').length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '公共数字人').map((person) => <AvatarTile selected={selected === person.id} onClick={() => setSelected(person.id)} presenter={person} key={person.id} />)}</div></section>
+      {previewing?.videoPath && <div className="modal-backdrop" role="presentation" onMouseDown={() => setPreviewing(null)}><section className="avatar-video-modal" role="dialog" aria-modal="true" aria-labelledby="avatar-video-title" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" type="button" aria-label="关闭视频预览" onClick={() => setPreviewing(null)}><X size={18} /></button><div className="avatar-video-heading"><span className="modal-kicker">口型同步 MP4</span><h2 id="avatar-video-title">{previewing.name}</h2><p>{previewing.videoMessage || '数字人形象视频'}</p></div><video autoPlay controls preload="metadata" poster={previewing.image} src={previewing.videoPath} /></section></div>}
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </section>
   )

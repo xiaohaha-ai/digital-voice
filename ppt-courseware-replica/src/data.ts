@@ -2,8 +2,8 @@ import type { PageId } from './App'
 import { FileAudio, FileStack, MonitorPlay, Sparkles, UsersRound, type LucideIcon } from 'lucide-react'
 
 export const navItems: { id: PageId; label: string; icon: LucideIcon }[] = [
-  { id: 'recording', label: 'AI录课', icon: Sparkles },
-  { id: 'courseware', label: '视频课件', icon: MonitorPlay },
+  { id: 'recording', label: '视频生成', icon: Sparkles },
+  { id: 'courseware', label: '视频素材', icon: MonitorPlay },
   { id: 'ppt', label: '我的PPT', icon: FileStack },
   { id: 'people', label: '数字人', icon: UsersRound },
   { id: 'audio', label: '数字人音频', icon: FileAudio },
@@ -15,6 +15,15 @@ export type Presenter = {
   tone: string
   image: string
   group: '创建的数字人' | '公共数字人'
+  portraitPath?: string
+  audioPath?: string
+  videoPath?: string
+  videoStatus?: 'processing' | 'ready' | 'failed'
+  videoMessage?: string
+  generationJobId?: string
+  provider?: string
+  model?: string
+  createdAt?: string
 }
 
 export const presenters: Presenter[] = [

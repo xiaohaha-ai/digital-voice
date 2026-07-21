@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
 
 # Runtime data belongs on the server volume, not in source control.
 /digital-server/data/store.json
