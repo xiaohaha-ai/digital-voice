@@ -45,6 +45,10 @@ const volcVisualHost = 'visual.volcengineapi.com'
 const llmBaseUrl = process.env.LLM_BASE_URL?.replace(/\/$/, '')
 const llmApiKey = process.env.LLM_API_KEY
 const llmModel = process.env.LLM_MODEL?.trim() || 'configured-llm'
+const difyApiBaseUrl = process.env.DIFY_API_BASE_URL?.replace(/\/$/, '')
+const difyApiKey = process.env.DIFY_API_KEY?.trim()
+const difyScriptInputKey = process.env.DIFY_SCRIPT_INPUT_KEY?.trim() || 'topic'
+const difyScriptOutputKey = process.env.DIFY_SCRIPT_OUTPUT_KEY?.trim() || 'text'
 
 function configuredMode(name: string, fallback: ProviderMode): ProviderMode {
   const value = process.env[name]?.trim().toLowerCase()
@@ -132,6 +136,59 @@ type WorkerPayload = Record<string, unknown> & {
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
+function tenSecondScript(value: string) {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (!normalized) throw new ModelProviderError(502, 'Dify 工作流未返回口播内容')
+  const characters = Array.from(normalized)
+  if (characters.length <= 60) return normalized
+
+  const excerpt = characters.slice(0, 60)
+  let boundary = -1
+  for (let index = excerpt.length - 1; index >= 24; index -= 1) {
+    if ('。！？；'.includes(excerpt[index])) {
+      boundary = index
+      break
+    }
+  }
+  return boundary >= 0 ? excerpt.slice(0, boundary + 1).join('') : `${excerpt.join('').trimEnd()}。`
+}
+
+export async function generateDifyScript(topic: string) {
+  if (!difyApiBaseUrl || !difyApiKey) throw new ModelProviderError(503, 'Dify 工作流尚未配置，请设置 DIFY_API_BASE_URL 和 DIFY_API_KEY')
+  const apiBase = difyApiBaseUrl.endsWith('/v1') ? difyApiBaseUrl : `${difyApiBaseUrl}/v1`
+  const prompt = [
+    `主题：${topic}`,
+    '请生成一段适合数字人朗读的中文口播正文。',
+    '时长约 10 秒，建议 40 到 55 个汉字。',
+    '只输出正文，不要标题、说明、Markdown 或时长标记。',
+  ].join('\n')
+  const response = await fetch(`${apiBase}/workflows/run`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${difyApiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inputs: { [difyScriptInputKey]: prompt }, response_mode: 'blocking', user: 'digital-person' }),
+    signal: AbortSignal.timeout(90_000),
+  }).catch(() => undefined)
+  if (!response) throw new ModelProviderError(503, 'Dify 工作流当前不可连接')
+
+  const payload = await response.json().catch(() => ({})) as { message?: unknown; data?: unknown }
+  const data = asRecord(payload.data)
+  if (!response.ok || data?.status === 'failed') {
+    const message = typeof payload.message === 'string'
+      ? payload.message
+      : typeof data?.error === 'string'
+        ? data.error
+        : 'Dify 工作流执行失败'
+    throw new ModelProviderError(response.status === 401 || response.status === 403 ? 503 : 502, message)
+  }
+
+  const outputs = asRecord(data?.outputs)
+  const configuredOutput = outputs?.[difyScriptOutputKey]
+  const fallbackOutput = outputs && Object.values(outputs).find((value): value is string => typeof value === 'string')
+  const output = typeof configuredOutput === 'string' ? configuredOutput : fallbackOutput
+  if (!output) throw new ModelProviderError(502, `Dify 工作流未返回 ${difyScriptOutputKey} 输出变量`)
+  return tenSecondScript(output)
 }
 
 function stringValue(payload: WorkerPayload, keys: string[]) {

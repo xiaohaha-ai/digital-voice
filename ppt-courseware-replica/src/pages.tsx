@@ -252,19 +252,21 @@ function DigitalPersonVideoCard({ person, selected, onSelect, onPreview, onImage
   </article>
 }
 
-export function DigitalPeoplePage({ people, onGenerateAvatar, onGenerateTextAvatar, onUploadImage, onUploadAudio, onRefreshAvatar, onRemove }: { people: Presenter[]; onGenerateAvatar: (input: { name: string; portraitPath: string; audioPath: string; consent: boolean }) => Promise<Presenter>; onGenerateTextAvatar: (input: { name: string; portraitPath: string; text: string; voiceGender: 'male' | 'female'; consent: boolean }) => Promise<Presenter>; onUploadImage: (file: File) => Promise<string>; onUploadAudio: (file: File) => Promise<string>; onRefreshAvatar: (id: string) => Promise<Presenter>; onRemove: (id: string) => void }) {
+export function DigitalPeoplePage({ people, onGenerateAvatar, onGenerateTextAvatar, onGenerateDifyScript, onUploadImage, onUploadAudio, onRefreshAvatar, onRemove }: { people: Presenter[]; onGenerateAvatar: (input: { name: string; portraitPath: string; audioPath: string; consent: boolean }) => Promise<Presenter>; onGenerateTextAvatar: (input: { name: string; portraitPath: string; text: string; voiceGender: 'male' | 'female'; consent: boolean }) => Promise<Presenter>; onGenerateDifyScript: (topic: string) => Promise<string>; onUploadImage: (file: File) => Promise<string>; onUploadAudio: (file: File) => Promise<string>; onRefreshAvatar: (id: string) => Promise<Presenter>; onRemove: (id: string) => void }) {
   const [name, setName] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [preview, setPreview] = useState('')
   const [portraitPath, setPortraitPath] = useState('')
   const [audioPath, setAudioPath] = useState('')
+  const [scriptTopic, setScriptTopic] = useState('')
   const [script, setScript] = useState('')
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female')
   const [toast, setToast] = useState('')
   const [imageFileName, setImageFileName] = useState('')
   const [audioFileName, setAudioFileName] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [generatingScript, setGeneratingScript] = useState(false)
   const [uploading, setUploading] = useState<'image' | 'audio' | null>(null)
   const [consent, setConsent] = useState(false)
   const [previewing, setPreviewing] = useState<Presenter | null>(null)
@@ -282,6 +284,7 @@ export function DigitalPeoplePage({ people, onGenerateAvatar, onGenerateTextAvat
       setPreview('')
       setPortraitPath('')
       setAudioPath('')
+      setScriptTopic('')
       setScript('')
       setImageFileName('')
       setAudioFileName('')
@@ -292,6 +295,18 @@ export function DigitalPeoplePage({ people, onGenerateAvatar, onGenerateTextAvat
       setToast(error instanceof Error ? error.message : '数字人视频生成失败')
     } finally {
       setGenerating(false)
+    }
+  }
+  const generateScript = async () => {
+    if (!scriptTopic.trim()) return setToast('请先填写口播主题')
+    setGeneratingScript(true)
+    try {
+      setScript(await onGenerateDifyScript(scriptTopic.trim()))
+      setToast('已生成约 10 秒口播内容')
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Dify 口播内容生成失败')
+    } finally {
+      setGeneratingScript(false)
     }
   }
   const updatePreview = async (file: File) => {
@@ -348,7 +363,7 @@ export function DigitalPeoplePage({ people, onGenerateAvatar, onGenerateTextAvat
         </FilePickerButton>
         {preview && <img className="portrait-preview" src={preview} alt="待生成数字人的头像预览" />}
         <FilePickerButton className="audio-file" accept="audio/mpeg,audio/wav,audio/x-m4a" ariaLabel="上传自备数字人音频" onPick={updateAudio}><FileAudioIcon /><span>{uploading === 'audio' ? '正在上传音频...' : audioFileName || '上传自备音频（可选，MP3/WAV/M4A）'}</span></FilePickerButton>
-        <label className="script-input"><span>口播内容</span><textarea value={script} maxLength={8000} onChange={(event) => setScript(event.target.value)} placeholder="输入需要数字人朗读的内容；填写后将使用下方选择的 AI 音色。" /></label>
+        <div className="script-input"><div className="script-input-heading"><span>口播内容</span><small>约 10 秒</small></div><div className="dify-script-controls"><input value={scriptTopic} maxLength={240} onChange={(event) => setScriptTopic(event.target.value)} placeholder="输入口播主题" aria-label="Dify 口播主题" /><button className="dify-script-button" type="button" disabled={generatingScript} onClick={() => { void generateScript() }}><Sparkles size={15} />{generatingScript ? '生成中...' : 'Dify 生成'}</button></div><textarea value={script} maxLength={80} onChange={(event) => setScript(event.target.value)} placeholder="可直接输入，或使用 Dify 生成约 10 秒口播。" aria-label="口播内容" /></div>
         <div className="voice-choice"><span>AI 配音音色</span><div className="segment-tabs" role="group" aria-label="选择数字人配音音色"><button className={voiceGender === 'male' ? 'active' : ''} type="button" aria-pressed={voiceGender === 'male'} onClick={() => setVoiceGender('male')}>男声</button><button className={voiceGender === 'female' ? 'active' : ''} type="button" aria-pressed={voiceGender === 'female'} onClick={() => setVoiceGender('female')}>女声</button></div><small>填写口播内容时，将先异步生成配音，再自动生成数字人视频。</small></div>
         <label className="avatar-consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />我确认拥有该肖像及相关音频或文本的使用授权</label>
         <button className="primary-button full" type="button" disabled={generating || Boolean(uploading)} onClick={() => { void create() }}><Video size={17} />{generating ? '正在提交任务...' : '生成数字人视频'}</button>

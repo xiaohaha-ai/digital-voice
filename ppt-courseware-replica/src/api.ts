@@ -62,6 +62,7 @@ export const api = {
   createPerson: (person: Presenter) => request<Presenter>('/people', json('POST', person)),
   uploadImage: (file: File) => request<{ filePath: string }>('/uploads/image', fileBody(file)),
   uploadAvatarAudio: (file: File) => request<{ filePath: string }>('/uploads/avatar-audio', fileBody(file)),
+  generateDifyScript: (topic: string) => request<{ text: string }>('/dify/scripts/generate', json('POST', { topic })),
   generateDigitalPerson: (input: GenerateDigitalPersonInput) => request<Presenter>('/digital-people/generate', json('POST', input)),
   generateAvatarVideo: (input: GenerateAvatarVideoInput) => request<Presenter>('/digital-people/avatar', json('POST', input)),
   generateTextAvatarVideo: (input: GenerateTextAvatarVideoInput) => request<Presenter>('/digital-people/text-avatar', json('POST', input)),

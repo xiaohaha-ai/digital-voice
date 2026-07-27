@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { ensureStore, readStore, removeStoredUpload, storedUploadPath, updateStore, uploadsDirectory } from './store.js'
 import { createDigitalPersonImage, ImageGenerationError } from './image-generation.js'
-import { generateMuseTalkAvatar, generatePptScripts, getProviderStatuses, getRemoteJob, ModelProviderError, removeBackground, resolveAvatarJob, resolveVoiceJob, synthesizePresetVoice, synthesizeWithCosyVoice, type VoiceGender } from './model-providers.js'
+import { generateDifyScript, generateMuseTalkAvatar, generatePptScripts, getProviderStatuses, getRemoteJob, ModelProviderError, removeBackground, resolveAvatarJob, resolveVoiceJob, synthesizePresetVoice, synthesizeWithCosyVoice, type VoiceGender } from './model-providers.js'
 import { parsePptx, PptParseError } from './ppt-parser.js'
 import { cloneVoiceFromReference, VoiceCloneError } from './voice-cloning.js'
 import type { Course, CourseStatus, PptFile, Presenter, Voice } from './types.js'
@@ -162,6 +162,10 @@ async function parseStoredPpt(id: string, force = false) {
 
 app.get('/api/health', (_request, response) => response.json({ ok: true }))
 app.get('/api/providers/status', asyncRoute(async (_request, response) => response.json({ providers: await getProviderStatuses() })))
+app.post('/api/dify/scripts/generate', asyncRoute(async (request, response) => {
+  const topic = text(bodyOf(request).topic, '口播主题', 240)
+  response.json({ text: await generateDifyScript(topic) })
+}))
 app.get('/api/jobs/:id', asyncRoute(async (request, response) => {
   const jobId = routeId(request.params.id)
   if (!identifierPattern.test(jobId)) return invalid(response, '任务 ID 格式无效')
