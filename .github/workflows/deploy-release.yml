@@ -12,10 +12,6 @@ concurrency:
   group: digital-person-release
   cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: ppt-courseware-replica
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -61,6 +57,7 @@ jobs:
 
       - name: Verify build
         if: steps.deployment_config.outputs.ready == 'true'
+        working-directory: ppt-courseware-replica
         run: |
           npm ci
           npm run build
