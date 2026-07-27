@@ -1,0 +1,84 @@
+name: Deploy release
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: digital-person-release
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployment configuration
+        id: deployment_config
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          missing=0
+          for key in DEPLOY_HOST DEPLOY_PORT DEPLOY_USER DEPLOY_SSH_PRIVATE_KEY DEPLOY_SSH_KNOWN_HOSTS; do
+            if [[ -z "${!key}" ]]; then
+              echo "Missing GitHub Actions secret: $key"
+              missing=1
+            fi
+          done
+
+          if [[ "$missing" -eq 1 ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Deployment skipped until the required GitHub Actions secrets are configured."
+            exit 0
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check out release
+        if: steps.deployment_config.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: steps.deployment_config.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify build
+        if: steps.deployment_config.outputs.ready == 'true'
+        run: |
+          npm ci
+          npm run build
+
+      - name: Configure deployment SSH key
+        if: steps.deployment_config.outputs.ready == 'true'
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Deploy to production
+        if: steps.deployment_config.outputs.ready == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            'APP_DIR=/opt/digital-person RELEASE_BRANCH=release SERVICE_NAME=digital-person HEALTH_URL=http://127.0.0.1:8787/api/health bash /opt/digital-person/deploy/scripts/deploy-release.sh'
+
+      - name: Remove deployment SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
