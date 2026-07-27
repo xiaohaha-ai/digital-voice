@@ -12,6 +12,10 @@ concurrency:
   group: digital-person-release
   cancel-in-progress: false
 
+defaults:
+  run:
+    working-directory: ppt-courseware-replica
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -44,6 +48,8 @@ jobs:
       - name: Check out release
         if: steps.deployment_config.outputs.ready == 'true'
         uses: actions/checkout@v4
+        with:
+          ref: release
 
       - name: Set up Node.js
         if: steps.deployment_config.outputs.ready == 'true'
@@ -51,6 +57,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: ppt-courseware-replica/package-lock.json
 
       - name: Verify build
         if: steps.deployment_config.outputs.ready == 'true'
