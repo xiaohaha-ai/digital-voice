@@ -47,9 +47,8 @@ The server submits `CVSubmitTask` to the Volcano Engine Visual API and polls wit
 The included Nginx configuration serves the Vite build, proxies `/api` to the Node service, and exposes `/uploads` for OmniHuman input. On the ECS server:
 
 ```bash
-sudo mkdir -p /opt/digital-person
-# Upload the project source to /opt/digital-person, then run:
-cd /opt/digital-person
+sudo git clone --branch release https://github.com/xiaohaha-ai/digital-voice.git /opt/digital-person
+cd /opt/digital-person/ppt-courseware-replica
 npm ci
 npm run build
 sudo cp deploy/nginx/digital-person.conf /etc/nginx/sites-available/digital-person
@@ -61,14 +60,14 @@ sudo systemctl enable --now digital-person
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Create `/opt/digital-person/.env.local` with `AVATAR_PROVIDER=volcengine`, the Volcano Engine credentials, and `VOLCENGINE_PUBLIC_UPLOAD_BASE_URL=http://your-public-ip/uploads` before starting the service. Use an HTTPS domain before accepting real user portraits or voice recordings in production.
+Create `/opt/digital-person/ppt-courseware-replica/.env.local` with `AVATAR_PROVIDER=volcengine`, the Volcano Engine credentials, and `VOLCENGINE_PUBLIC_UPLOAD_BASE_URL=http://your-public-ip/uploads` before starting the service. Use an HTTPS domain before accepting real user portraits or voice recordings in production.
 
 ### Service Control and Logs
 
 After updating the service file on the server, reload systemd once:
 
 ```bash
-sudo cp deploy/systemd/digital-person.service /etc/systemd/system/digital-person.service
+sudo cp /opt/digital-person/ppt-courseware-replica/deploy/systemd/digital-person.service /etc/systemd/system/digital-person.service
 sudo systemctl daemon-reload
 ```
 
@@ -92,7 +91,7 @@ The API writes each completed request to the system journal in this form: `[requ
 
 ### Automated Release Deployment
 
-Pushing to the `release` branch starts the `Deploy release` GitHub Actions workflow. The workflow validates the build, connects to `/opt/digital-person` over SSH, then runs `deploy/scripts/deploy-release.sh` to update the release branch, install dependencies, build the app, restart `digital-person`, and check `/api/health`.
+Pushing to the `release` branch starts the `Deploy release` GitHub Actions workflow. The workflow validates the build, connects to `/opt/digital-person/ppt-courseware-replica` over SSH, then runs `deploy/scripts/deploy-release.sh` to update the release branch, install dependencies, build the app, restart `digital-person`, and check `/api/health`.
 
 Before the first release push, add these repository secrets in GitHub under **Settings > Secrets and variables > Actions**:
 
@@ -110,7 +109,7 @@ Obtain `DEPLOY_SSH_KNOWN_HOSTS` from a trusted machine, verify it against the se
 ssh-keyscan -p 22 -H your-server.example
 ```
 
-The deployment account must be able to run `git pull` in `/opt/digital-person`. When it is not `root`, allow non-interactive `sudo` for `install` and `systemctl`, or adapt `deploy/scripts/deploy-release.sh` to your server's privilege policy. `.env.local` remains on the server and is not replaced by the workflow.
+The deployment account must be able to run `git pull` in `/opt/digital-person/ppt-courseware-replica`. When it is not `root`, allow non-interactive `sudo` for `install` and `systemctl`, or adapt `deploy/scripts/deploy-release.sh` to your server's privilege policy. `.env.local` remains on the server and is not replaced by the workflow.
 
 Until all five secrets are configured, a release push intentionally skips deployment and reports that setup is incomplete. Once configured, use this release flow:
 

@@ -84,7 +84,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           ssh -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
-            'APP_DIR=/opt/digital-person RELEASE_BRANCH=release SERVICE_NAME=digital-person HEALTH_URL=http://127.0.0.1:8787/api/health bash /opt/digital-person/deploy/scripts/deploy-release.sh'
+            'APP_DIR=/opt/digital-person/ppt-courseware-replica RELEASE_BRANCH=release SERVICE_NAME=digital-person HEALTH_URL=http://127.0.0.1:8787/api/health bash /opt/digital-person/ppt-courseware-replica/deploy/scripts/deploy-release.sh'
 
       - name: Remove deployment SSH key
         if: always()

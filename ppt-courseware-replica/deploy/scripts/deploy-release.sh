@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-APP_DIR="${APP_DIR:-/opt/digital-person}"
+APP_DIR="${APP_DIR:-/opt/digital-person/ppt-courseware-replica}"
 RELEASE_BRANCH="${RELEASE_BRANCH:-release}"
 SERVICE_NAME="${SERVICE_NAME:-digital-person}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8787/api/health}"
