@@ -137,6 +137,16 @@ DIFY_SCRIPT_OUTPUT_KEY=text
 
 The supplied Dify app is a Chatflow, so it uses `DIFY_APP_MODE=chatflow`, sends the narration request through `chat-messages`, and reads the returned `answer`. For a Workflow app, set `DIFY_APP_MODE=workflow`, create a text input named `topic` and an End node output named `text`. The application sends a Chinese, approximately 10-second narration requirement, then limits the returned text to 60 characters before placing it in the narration field.
 
+### Local UI Using the Online Service
+
+To develop the interface locally while using the same digital-person records, Dify configuration, generation jobs, and uploaded files as the deployed service, start only Vite with the deployed origin:
+
+```bash
+API_ORIGIN=http://121.40.143.160 npm run dev:remote
+```
+
+Open the local address printed by Vite (normally `http://127.0.0.1:5173`). The local dev server proxies both `/api` and `/uploads` to `API_ORIGIN`, so relative media paths continue to work. Use an HTTPS domain in place of the IP address when one is available. Do not run `npm run dev:full` for this mode: it starts a separate local API and therefore separate data and jobs.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
