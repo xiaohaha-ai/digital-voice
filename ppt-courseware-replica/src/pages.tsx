@@ -57,9 +57,9 @@ function FilePickerButton({ accept, onPick, className, children, ariaLabel }: { 
   </>
 }
 
-function AvatarTile({ presenter, selected, onClick, compact = false }: { presenter: Presenter; selected?: boolean; onClick?: () => void; compact?: boolean }) {
+function AvatarTile({ presenter, selected, onClick, onDoubleClick, compact = false }: { presenter: Presenter; selected?: boolean; onClick?: () => void; onDoubleClick?: () => void; compact?: boolean }) {
   return (
-    <button className={`avatar-tile ${selected ? 'selected' : ''} ${compact ? 'compact' : ''}`} onClick={onClick} type="button">
+    <button className={`avatar-tile ${selected ? 'selected' : ''} ${compact ? 'compact' : ''}`} onClick={onClick} onDoubleClick={onDoubleClick} type="button">
       <img src={presenter.image} alt={presenter.name} />
       <span className="avatar-name">{presenter.name}</span>
       {!compact && <span className="avatar-tone">{presenter.tone}</span>}
@@ -235,11 +235,11 @@ export function PptLibraryPage({ files, onUpload, onPreview, onRemove }: { files
   )
 }
 
-function DigitalPersonVideoCard({ person, selected, onSelect, onPreview }: { person: Presenter; selected: boolean; onSelect: () => void; onPreview: () => void }) {
+function DigitalPersonVideoCard({ person, selected, onSelect, onPreview, onImagePreview }: { person: Presenter; selected: boolean; onSelect: () => void; onPreview: () => void; onImagePreview: () => void }) {
   const state = person.videoStatus ?? (person.videoPath ? 'ready' : undefined)
   const statusLabel = state === 'processing' ? '正在生成口型视频' : state === 'ready' ? 'MP4 已生成' : state === 'failed' ? '生成失败' : '尚未生成视频'
   return <article className={`digital-person-card ${selected ? 'selected' : ''}`}>
-    <div className="digital-person-media">
+    <div className="digital-person-media" onDoubleClick={(event) => { event.preventDefault(); onImagePreview() }}>
       {person.videoPath
         ? <video controls preload="metadata" poster={person.image} src={person.videoPath} onClick={(event) => event.stopPropagation()} />
         : <><img src={person.image} alt={person.name} />{state === 'processing' && <span className="video-processing"><LoaderCircle size={18} />生成中</span>}{state === 'failed' && <span className="video-failed"><AlertCircle size={17} />失败</span>}</>}
@@ -266,6 +266,7 @@ export function DigitalPeoplePage({ people, onGenerateAvatar, onUploadImage, onU
   const [uploading, setUploading] = useState<'image' | 'audio' | null>(null)
   const [consent, setConsent] = useState(false)
   const [previewing, setPreviewing] = useState<Presenter | null>(null)
+  const [portraitPreviewing, setPortraitPreviewing] = useState<Presenter | null>(null)
   const create = async () => {
     if (!name.trim()) return setToast('请先填写形象名称')
     if (!portraitPath || !audioPath) return setToast('请先上传头像和音频')
@@ -346,8 +347,9 @@ export function DigitalPeoplePage({ people, onGenerateAvatar, onUploadImage, onU
         <button className="primary-button full" type="button" disabled={generating || Boolean(uploading)} onClick={() => { void create() }}><Video size={17} />{generating ? '正在创建数字人...' : '创建数字人'}</button>
         <div className="quota"><span>名额</span><strong>{created.length} / 4</strong><small>含额外名额 1 个</small></div>
       </aside>
-      <section className="people-library"><PageToolbar><SearchBox value={search} onChange={setSearch} placeholder="搜索数字人" /><span className="toolbar-spacer" /><button className="ghost-button danger" disabled={!selected} type="button" onClick={() => { if (selected) { onRemove(selected); setSelected(null); setToast('已删除数字人') } }}><Trash2 size={16} />删除数字人</button><button className="ghost-button" disabled={!selected} type="button" onClick={() => setToast('当前数字人已进入编辑状态')}><Edit3 size={16} />编辑数字人</button></PageToolbar><h2>创建的数字人 <span>（{created.length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '创建的数字人').map((person) => <DigitalPersonVideoCard selected={selected === person.id} onSelect={() => setSelected(person.id)} onPreview={() => setPreviewing(person)} person={person} key={person.id} />)}</div><h2>公共数字人 <span>（{visible.filter((person) => person.group === '公共数字人').length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '公共数字人').map((person) => <AvatarTile selected={selected === person.id} onClick={() => setSelected(person.id)} presenter={person} key={person.id} />)}</div></section>
+      <section className="people-library"><PageToolbar><SearchBox value={search} onChange={setSearch} placeholder="搜索数字人" /><span className="toolbar-spacer" /><button className="ghost-button danger" disabled={!selected} type="button" onClick={() => { if (selected) { onRemove(selected); setSelected(null); setToast('已删除数字人') } }}><Trash2 size={16} />删除数字人</button><button className="ghost-button" disabled={!selected} type="button" onClick={() => setToast('当前数字人已进入编辑状态')}><Edit3 size={16} />编辑数字人</button></PageToolbar><h2>创建的数字人 <span>（{created.length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '创建的数字人').map((person) => <DigitalPersonVideoCard selected={selected === person.id} onSelect={() => setSelected(person.id)} onPreview={() => setPreviewing(person)} onImagePreview={() => setPortraitPreviewing(person)} person={person} key={person.id} />)}</div><h2>公共数字人 <span>（{visible.filter((person) => person.group === '公共数字人').length} 个）</span></h2><div className="people-grid">{visible.filter((person) => person.group === '公共数字人').map((person) => <AvatarTile selected={selected === person.id} onClick={() => setSelected(person.id)} onDoubleClick={() => setPortraitPreviewing(person)} presenter={person} key={person.id} />)}</div></section>
       {previewing?.videoPath && <div className="modal-backdrop" role="presentation" onMouseDown={() => setPreviewing(null)}><section className="avatar-video-modal" role="dialog" aria-modal="true" aria-labelledby="avatar-video-title" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" type="button" aria-label="关闭视频预览" onClick={() => setPreviewing(null)}><X size={18} /></button><div className="avatar-video-heading"><span className="modal-kicker">口型同步 MP4</span><h2 id="avatar-video-title">{previewing.name}</h2><p>{previewing.videoMessage || '数字人形象视频'}</p></div><video autoPlay controls preload="metadata" poster={previewing.image} src={previewing.videoPath} /></section></div>}
+      {portraitPreviewing && <div className="modal-backdrop" role="presentation" onMouseDown={() => setPortraitPreviewing(null)}><section className="avatar-image-modal" role="dialog" aria-modal="true" aria-labelledby="avatar-image-title" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" type="button" aria-label="关闭形象预览" onClick={() => setPortraitPreviewing(null)}><X size={18} /></button><div className="avatar-image-heading"><h2 id="avatar-image-title">{portraitPreviewing.name}</h2><p>{portraitPreviewing.tone}</p></div><div className="avatar-image-stage"><img src={portraitPreviewing.image} alt={`${portraitPreviewing.name}完整形象`} /></div></section></div>}
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </section>
   )
