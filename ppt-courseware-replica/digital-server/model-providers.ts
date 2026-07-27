@@ -47,6 +47,7 @@ const llmApiKey = process.env.LLM_API_KEY
 const llmModel = process.env.LLM_MODEL?.trim() || 'configured-llm'
 const difyApiBaseUrl = process.env.DIFY_API_BASE_URL?.replace(/\/$/, '')
 const difyApiKey = process.env.DIFY_API_KEY?.trim()
+const difyAppMode = process.env.DIFY_APP_MODE?.trim().toLowerCase() || 'chatflow'
 const difyScriptInputKey = process.env.DIFY_SCRIPT_INPUT_KEY?.trim() || 'topic'
 const difyScriptOutputKey = process.env.DIFY_SCRIPT_OUTPUT_KEY?.trim() || 'text'
 
@@ -157,6 +158,7 @@ function tenSecondScript(value: string) {
 
 export async function generateDifyScript(topic: string) {
   if (!difyApiBaseUrl || !difyApiKey) throw new ModelProviderError(503, 'Dify 工作流尚未配置，请设置 DIFY_API_BASE_URL 和 DIFY_API_KEY')
+  if (difyAppMode !== 'chatflow' && difyAppMode !== 'workflow') throw new ModelProviderError(500, 'DIFY_APP_MODE 必须是 chatflow 或 workflow')
   const apiBase = difyApiBaseUrl.endsWith('/v1') ? difyApiBaseUrl : `${difyApiBaseUrl}/v1`
   const prompt = [
     `主题：${topic}`,
@@ -164,15 +166,18 @@ export async function generateDifyScript(topic: string) {
     '时长约 10 秒，建议 40 到 55 个汉字。',
     '只输出正文，不要标题、说明、Markdown 或时长标记。',
   ].join('\n')
-  const response = await fetch(`${apiBase}/workflows/run`, {
+  const isChatflow = difyAppMode === 'chatflow'
+  const response = await fetch(`${apiBase}/${isChatflow ? 'chat-messages' : 'workflows/run'}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${difyApiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ inputs: { [difyScriptInputKey]: prompt }, response_mode: 'blocking', user: 'digital-person' }),
+    body: JSON.stringify(isChatflow
+      ? { inputs: {}, query: prompt, response_mode: 'blocking', user: 'digital-person' }
+      : { inputs: { [difyScriptInputKey]: prompt }, response_mode: 'blocking', user: 'digital-person' }),
     signal: AbortSignal.timeout(90_000),
   }).catch(() => undefined)
   if (!response) throw new ModelProviderError(503, 'Dify 工作流当前不可连接')
 
-  const payload = await response.json().catch(() => ({})) as { message?: unknown; data?: unknown }
+  const payload = await response.json().catch(() => ({})) as { message?: unknown; answer?: unknown; data?: unknown }
   const data = asRecord(payload.data)
   if (!response.ok || data?.status === 'failed') {
     const message = typeof payload.message === 'string'
@@ -181,6 +186,11 @@ export async function generateDifyScript(topic: string) {
         ? data.error
         : 'Dify 工作流执行失败'
     throw new ModelProviderError(response.status === 401 || response.status === 403 ? 503 : 502, message)
+  }
+
+  if (isChatflow) {
+    if (typeof payload.answer !== 'string') throw new ModelProviderError(502, 'Dify Chatflow 未返回 answer')
+    return tenSecondScript(payload.answer)
   }
 
   const outputs = asRecord(data?.outputs)

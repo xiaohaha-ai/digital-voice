@@ -123,18 +123,19 @@ git push origin release
 
 For slide summaries and scripts, `POST /api/ppts/{id}/scripts/generate` uses deterministic mock text by default. Set `LLM_PROVIDER=remote`, `LLM_BASE_URL`, and `LLM_MODEL` only when intentionally enabling an OpenAI-compatible local or cloud LLM endpoint.
 
-### Dify 10-Second Narration Workflow
+### Dify 10-Second Narration
 
-The digital-person form can generate its narration from a Dify workflow. Configure the following values in `.env.local`; the API key stays on the server and is never sent to the browser:
+The digital-person form can generate its narration from a Dify Chatflow or Workflow. Configure the following values in `.env.local`; the API key stays on the server and is never sent to the browser:
 
 ```bash
 DIFY_API_BASE_URL=https://api.dify.ai/v1
 DIFY_API_KEY=app-your-dify-key
+DIFY_APP_MODE=chatflow
 DIFY_SCRIPT_INPUT_KEY=topic
 DIFY_SCRIPT_OUTPUT_KEY=text
 ```
 
-Create a Dify workflow with a text input named `topic` and an End node output named `text`. The application sends the topic together with a Chinese, approximately 10-second narration requirement, then limits the returned text to 60 characters before placing it in the narration field.
+The supplied Dify app is a Chatflow, so it uses `DIFY_APP_MODE=chatflow`, sends the narration request through `chat-messages`, and reads the returned `answer`. For a Workflow app, set `DIFY_APP_MODE=workflow`, create a text input named `topic` and an End node output named `text`. The application sends a Chinese, approximately 10-second narration requirement, then limits the returned text to 60 characters before placing it in the narration field.
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
