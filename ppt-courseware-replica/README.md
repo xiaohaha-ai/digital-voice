@@ -60,6 +60,8 @@ sudo systemctl enable --now digital-person
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+The service supports either a system-wide Node.js installation or Node.js installed for `root` with NVM. For the latter, it loads `/root/.nvm/nvm.sh` before starting `npm`, so it does not depend on an `/usr/bin/npm` symlink.
+
 Create `/opt/digital-person/ppt-courseware-replica/.env.local` with `AVATAR_PROVIDER=volcengine`, the Volcano Engine credentials, and `VOLCENGINE_PUBLIC_UPLOAD_BASE_URL=http://your-public-ip/uploads` before starting the service. Use an HTTPS domain before accepting real user portraits or voice recordings in production.
 
 ### Service Control and Logs
@@ -91,7 +93,7 @@ The API writes each completed request to the system journal in this form: `[requ
 
 ### Automated Release Deployment
 
-Pushing to the `release` branch starts the `Deploy release` GitHub Actions workflow. The workflow validates the build, connects to `/opt/digital-person/ppt-courseware-replica` over SSH, then runs `deploy/scripts/deploy-release.sh` to update the release branch, install dependencies, build the app, restart `digital-person`, and check `/api/health`.
+Pushing to the `release` branch starts the `Deploy release` GitHub Actions workflow. The workflow validates the build, connects to `/opt/digital-person/ppt-courseware-replica` over SSH, then runs `deploy/scripts/deploy-release.sh` to update the release branch, install dependencies, build the app, install and validate the Nginx configuration, restart `digital-person`, and check `/api/health`.
 
 Before the first release push, add these repository secrets in GitHub under **Settings > Secrets and variables > Actions**:
 

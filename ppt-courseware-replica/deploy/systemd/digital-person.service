@@ -6,7 +6,9 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/digital-person/ppt-courseware-replica
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/npm run server
+# NVM installs npm outside systemd's default PATH. Source it when available,
+# while still supporting a system-wide Node.js installation.
+ExecStart=/bin/bash -c 'if [ -s /root/.nvm/nvm.sh ]; then . /root/.nvm/nvm.sh; fi; exec npm run server'
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

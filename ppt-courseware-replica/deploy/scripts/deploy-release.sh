@@ -29,7 +29,10 @@ npm ci
 npm run build
 
 as_root install -m 0644 deploy/systemd/digital-person.service "/etc/systemd/system/$SERVICE_NAME.service"
+as_root install -m 0644 deploy/nginx/digital-person.conf "/etc/nginx/sites-available/$SERVICE_NAME"
 as_root systemctl daemon-reload
+as_root nginx -t
+as_root systemctl reload nginx
 as_root systemctl enable "$SERVICE_NAME"
 as_root systemctl restart "$SERVICE_NAME"
 as_root systemctl is-active --quiet "$SERVICE_NAME"
