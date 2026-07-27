@@ -17,10 +17,13 @@ export type Presenter = {
   group: '创建的数字人' | '公共数字人'
   portraitPath?: string
   audioPath?: string
+  script?: string
+  voiceGender?: 'male' | 'female'
   videoPath?: string
   videoStatus?: 'processing' | 'ready' | 'failed'
   videoMessage?: string
   generationJobId?: string
+  generationStage?: 'voice' | 'avatar'
   provider?: string
   model?: string
   createdAt?: string

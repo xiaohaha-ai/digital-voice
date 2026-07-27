@@ -8,6 +8,7 @@ type ProviderMode = 'mock' | 'remote' | 'local' | 'disabled' | 'volcengine'
 type WorkerProviderMode = Exclude<ProviderMode, 'volcengine'>
 type WorkerCapability = 'voice' | 'avatar' | 'image-background' | 'video-background'
 type ArtifactKind = 'audio' | 'video' | 'image'
+export type VoiceGender = 'male' | 'female'
 
 export type ProviderStatus = {
   id: string
@@ -361,8 +362,7 @@ export async function getRemoteJob(jobId: string) {
   return payload
 }
 
-export async function resolveAvatarJob(jobId: string, provider?: string): Promise<ModelJobResult> {
-  if (provider === 'volcengine-omnihuman') return resolveOmniHumanJob(jobId)
+async function resolveWorkerJob(jobId: string, capability: WorkerCapability, kind: ArtifactKind): Promise<ModelJobResult> {
   const payload = await getRemoteJob(jobId) as WorkerPayload
   const state = stringValue(payload, ['status', 'state', 'phase'])?.trim().toLowerCase()
   const failedStates = new Set(['failed', 'error', 'cancelled', 'canceled'])
@@ -372,14 +372,23 @@ export async function resolveAvatarJob(jobId: string, provider?: string): Promis
     return {
       status: 'queued',
       provider: 'remote-gpu-worker',
-      model: modelName('avatar'),
+      model: modelName(capability),
       jobId,
       message: statusMessage(payload),
     }
   }
-  const result = await saveWorkerPayload(payload, 'avatar', 'video')
-  if (result.status === 'queued') throw new ModelProviderError(502, '数字人视频任务已完成，但未返回 MP4 文件')
+  const result = await saveWorkerPayload(payload, capability, kind)
+  if (result.status === 'queued') throw new ModelProviderError(502, `${modelName(capability)} 任务已完成，但未返回产物文件`)
   return result
+}
+
+export async function resolveAvatarJob(jobId: string, provider?: string): Promise<ModelJobResult> {
+  if (provider === 'volcengine-omnihuman') return resolveOmniHumanJob(jobId)
+  return resolveWorkerJob(jobId, 'avatar', 'video')
+}
+
+export async function resolveVoiceJob(jobId: string): Promise<ModelJobResult> {
+  return resolveWorkerJob(jobId, 'voice', 'audio')
 }
 
 export async function getProviderStatuses(): Promise<ProviderStatus[]> {
@@ -512,6 +521,16 @@ export async function synthesizeWithCosyVoice(input: { referenceAudioPath: strin
   if (input.speed !== undefined) form.append('speed', String(input.speed))
   if (input.emotion) form.append('emotion', input.emotion)
   await appendStoredFile(form, 'reference_audio', input.referenceAudioPath, '参考音频')
+  return runWorker('voice', 'audio', form)
+}
+
+export async function synthesizePresetVoice(input: { text: string; gender: VoiceGender }) {
+  const mode = workerMode('voice')
+  if (mode === 'disabled' || mode === 'local') throw new ModelProviderError(503, 'CosyVoice 3 未启用，请配置 VOICE_PROVIDER=remote')
+  if (mode === 'mock') throw new ModelProviderError(503, '当前为 Mock 模式，无法生成男声或女声配音。请配置 VOICE_PROVIDER=remote 和 GPU_WORKER_BASE_URL')
+  const form = new FormData()
+  form.append('text', input.text)
+  form.append('voice_gender', input.gender)
   return runWorker('voice', 'audio', form)
 }
 

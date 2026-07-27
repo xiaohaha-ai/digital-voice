@@ -20,6 +20,14 @@ export type GenerateAvatarVideoInput = {
   consent: boolean
 }
 
+export type GenerateTextAvatarVideoInput = {
+  name: string
+  portraitPath: string
+  text: string
+  voiceGender: 'male' | 'female'
+  consent: boolean
+}
+
 type DeleteResult = { id: string; deleted: true }
 export type PptPreviewResponse = Pick<PptFile, 'id' | 'title' | 'filePath'> & { preview?: PptPreview }
 
@@ -56,6 +64,7 @@ export const api = {
   uploadAvatarAudio: (file: File) => request<{ filePath: string }>('/uploads/avatar-audio', fileBody(file)),
   generateDigitalPerson: (input: GenerateDigitalPersonInput) => request<Presenter>('/digital-people/generate', json('POST', input)),
   generateAvatarVideo: (input: GenerateAvatarVideoInput) => request<Presenter>('/digital-people/avatar', json('POST', input)),
+  generateTextAvatarVideo: (input: GenerateTextAvatarVideoInput) => request<Presenter>('/digital-people/text-avatar', json('POST', input)),
   getAvatarVideoStatus: (id: string) => request<Presenter>(`/people/${id}/video-status`),
   deletePerson: (id: string) => request<DeleteResult>(`/people/${id}`, { method: 'DELETE' }),
   uploadVoice: (file: File) => request<Voice>('/uploads/audio', fileBody(file)),

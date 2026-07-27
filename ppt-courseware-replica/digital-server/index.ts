@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { ensureStore, readStore, removeStoredUpload, storedUploadPath, updateStore, uploadsDirectory } from './store.js'
 import { createDigitalPersonImage, ImageGenerationError } from './image-generation.js'
-import { generateMuseTalkAvatar, generatePptScripts, getProviderStatuses, getRemoteJob, ModelProviderError, removeBackground, resolveAvatarJob, synthesizeWithCosyVoice } from './model-providers.js'
+import { generateMuseTalkAvatar, generatePptScripts, getProviderStatuses, getRemoteJob, ModelProviderError, removeBackground, resolveAvatarJob, resolveVoiceJob, synthesizePresetVoice, synthesizeWithCosyVoice, type VoiceGender } from './model-providers.js'
 import { parsePptx, PptParseError } from './ppt-parser.js'
 import { cloneVoiceFromReference, VoiceCloneError } from './voice-cloning.js'
 import type { Course, CourseStatus, PptFile, Presenter, Voice } from './types.js'
@@ -109,6 +109,10 @@ const optionalBoolean = (body: Record<string, unknown>, key: string) => {
   if (!hasOwn(body, key)) return undefined
   if (typeof body[key] !== 'boolean') throw new ApiError(400, '备注标记必须是布尔值')
   return body[key]
+}
+const voiceGender = (value: unknown): VoiceGender => {
+  if (value === 'male' || value === 'female') return value
+  throw new ApiError(400, '音色必须选择男声或女声')
 }
 const optionalColor = (body: Record<string, unknown>) => {
   if (!hasOwn(body, 'color')) return undefined
@@ -399,6 +403,71 @@ app.post('/api/digital-people/avatar', asyncRoute(async (request, response) => {
   })
   response.status(result.status === 'queued' ? 202 : 201).json(person)
 }))
+app.post('/api/digital-people/text-avatar', asyncRoute(async (request, response) => {
+  const body = bodyOf(request)
+  if (body.consent !== true) return invalid(response, '请确认你拥有该人物肖像和生成内容的使用授权')
+  const name = text(body.name, '数字人名称')
+  const portraitPath = text(body.portraitPath, '人物图片路径', 512)
+  const script = text(body.text, '口播内容', 8_000)
+  const selectedVoiceGender = voiceGender(body.voiceGender)
+  if (!portraitPath.startsWith('/uploads/')) return invalid(response, '人物图片必须使用已上传文件')
+
+  const voiceResult = await synthesizePresetVoice({ text: script, gender: selectedVoiceGender })
+  if (voiceResult.status === 'queued') {
+    if (!voiceResult.jobId) throw new ApiError(502, '语音 Provider 未返回可查询的任务 ID')
+    const person: Presenter = {
+      id: randomUUID(),
+      name,
+      tone: selectedVoiceGender === 'male' ? '男声口型同步视频' : '女声口型同步视频',
+      image: portraitPath,
+      portraitPath,
+      script,
+      voiceGender: selectedVoiceGender,
+      videoStatus: 'processing',
+      videoMessage: voiceResult.message,
+      generationJobId: voiceResult.jobId,
+      generationStage: 'voice',
+      provider: voiceResult.provider,
+      model: voiceResult.model,
+      createdAt: now(),
+      group: '创建的数字人',
+    }
+    await updateStore((store) => {
+      uniqueId(person.id, store.people, '数字人')
+      store.people.unshift(person)
+    })
+    return response.status(202).json(person)
+  }
+  if (!voiceResult.filePath) throw new ApiError(502, '语音 Provider 未返回音频文件')
+
+  const avatarResult = await generateMuseTalkAvatar({ portraitPath, audioPath: voiceResult.filePath })
+  if (avatarResult.status === 'queued' && !avatarResult.jobId) throw new ApiError(502, '数字人视频 Provider 未返回可查询的任务 ID')
+  if (avatarResult.status === 'completed' && !avatarResult.filePath) throw new ApiError(502, '数字人视频 Provider 未返回 MP4 文件')
+  const person: Presenter = {
+    id: randomUUID(),
+    name,
+    tone: selectedVoiceGender === 'male' ? '男声口型同步视频' : '女声口型同步视频',
+    image: portraitPath,
+    portraitPath,
+    audioPath: voiceResult.filePath,
+    script,
+    voiceGender: selectedVoiceGender,
+    videoPath: avatarResult.filePath,
+    videoStatus: avatarResult.status === 'completed' ? 'ready' : 'processing',
+    videoMessage: avatarResult.message,
+    generationJobId: avatarResult.jobId,
+    generationStage: avatarResult.status === 'queued' ? 'avatar' : undefined,
+    provider: avatarResult.provider,
+    model: avatarResult.model,
+    createdAt: now(),
+    group: '创建的数字人',
+  }
+  await updateStore((store) => {
+    uniqueId(person.id, store.people, '数字人')
+    store.people.unshift(person)
+  })
+  response.status(avatarResult.status === 'queued' ? 202 : 201).json(person)
+}))
 app.get('/api/people/:id/video-status', asyncRoute(async (request, response) => {
   const id = routeId(request.params.id)
   const current = (await readStore()).people.find((person) => person.id === id)
@@ -406,6 +475,37 @@ app.get('/api/people/:id/video-status', asyncRoute(async (request, response) => 
   if (current.videoStatus !== 'processing' || !current.generationJobId) return response.json(current)
 
   try {
+    if (current.generationStage === 'voice') {
+      const voiceResult = await resolveVoiceJob(current.generationJobId)
+      if (voiceResult.status === 'queued') {
+        const pending = await updateStore((store) => {
+          const person = store.people.find((item) => item.id === id)
+          if (!person) throw new ApiError(404, '数字人不存在')
+          person.videoMessage = voiceResult.message
+          return person
+        })
+        return response.json(pending)
+      }
+      if (!voiceResult.filePath || !current.portraitPath) throw new ApiError(502, '语音 Provider 未返回音频文件')
+      const avatarResult = await generateMuseTalkAvatar({ portraitPath: current.portraitPath, audioPath: voiceResult.filePath })
+      if (avatarResult.status === 'queued' && !avatarResult.jobId) throw new ApiError(502, '数字人视频 Provider 未返回可查询的任务 ID')
+      if (avatarResult.status === 'completed' && !avatarResult.filePath) throw new ApiError(502, '数字人视频 Provider 未返回 MP4 文件')
+      const transitioned = await updateStore((store) => {
+        const person = store.people.find((item) => item.id === id)
+        if (!person) throw new ApiError(404, '数字人不存在')
+        person.audioPath = voiceResult.filePath
+        person.videoPath = avatarResult.filePath
+        person.videoStatus = avatarResult.status === 'completed' ? 'ready' : 'processing'
+        person.videoMessage = avatarResult.message
+        person.generationJobId = avatarResult.jobId
+        person.generationStage = avatarResult.status === 'queued' ? 'avatar' : undefined
+        person.provider = avatarResult.provider
+        person.model = avatarResult.model
+        if (avatarResult.status === 'completed') delete person.generationJobId
+        return person
+      })
+      return response.json(transitioned)
+    }
     const result = await resolveAvatarJob(current.generationJobId, current.provider)
     if (result.status === 'queued') {
       const pending = await updateStore((store) => {
@@ -426,6 +526,7 @@ app.get('/api/people/:id/video-status', asyncRoute(async (request, response) => 
       person.provider = result.provider
       person.model = result.model
       delete person.generationJobId
+      delete person.generationStage
       return person
     })
     response.json(ready)
@@ -437,6 +538,7 @@ app.get('/api/people/:id/video-status', asyncRoute(async (request, response) => 
       person.videoStatus = 'failed'
       person.videoMessage = error.message
       delete person.generationJobId
+      delete person.generationStage
       return person
     })
     response.json(failed)

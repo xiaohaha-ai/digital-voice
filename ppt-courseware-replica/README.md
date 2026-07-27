@@ -32,6 +32,8 @@ Creating a digital person video uses this sequence:
 2. Submit the authorized pair to `POST /api/digital-people/avatar` with `name`, `portraitPath`, `audioPath`, and `consent: true`.
 3. If the response is queued, poll `GET /api/people/{id}/video-status` until `videoStatus` becomes `ready` and `videoPath` points to the generated MP4.
 
+Alternatively, submit a portrait, narration text, and `voiceGender` (`male` or `female`) to `POST /api/digital-people/text-avatar`. The service first requests preset voice synthesis, then automatically starts the lip-sync task. Poll the same status endpoint through both stages. For this route, the GPU Worker's `POST /internal/voice/synthesize` endpoint must accept multipart `text` and `voice_gender` fields and return either an audio artifact or a queued job ID.
+
 Real lip-sync video requires `AVATAR_PROVIDER=remote` plus a reachable `GPU_WORKER_BASE_URL` running MuseTalk 1.5. The default Mock mode deliberately rejects digital-person video creation rather than returning a non-synced placeholder video.
 
 ### Volcano Engine OmniHuman 1.5

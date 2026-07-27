@@ -95,6 +95,12 @@ function App() {
     return person
   }
 
+  const generateTextAvatarVideo = async (input: { name: string; portraitPath: string; text: string; voiceGender: 'male' | 'female'; consent: boolean }) => {
+    const person = await api.generateTextAvatarVideo(input)
+    setPeople((current) => [person, ...current.filter((item) => item.id !== person.id)])
+    return person
+  }
+
   const uploadImage = async (file: File) => {
     const uploaded = await api.uploadImage(file)
     return uploaded.filePath
@@ -149,7 +155,7 @@ function App() {
           {page === 'recording' && <RecordingPage people={people} pptFiles={pptList} onUploadPpt={uploadPpt} onCreatePersonFromPhoto={createPersonFromPhoto} onCreateCourse={addCourse} />}
           {page === 'courseware' && <CoursewarePage courses={courseList} onUpdateCourses={updateCourses} onCreate={() => navigate('recording')} />}
           {page === 'ppt' && <PptLibraryPage files={pptList} onUpload={uploadPpt} onPreview={previewPpt} onRemove={(ids) => { setPptList((current) => current.filter((file) => !ids.includes(file.id))); ids.forEach((id) => void api.deletePpt(id).catch(() => undefined)) }} />}
-          {page === 'people' && <DigitalPeoplePage people={people} onGenerateAvatar={generateAvatarVideo} onUploadImage={uploadImage} onUploadAudio={uploadAvatarAudio} onRefreshAvatar={refreshAvatarVideo} onRemove={(id) => { setPeople((current) => current.filter((person) => person.id !== id)); void api.deletePerson(id).catch(() => undefined) }} />}
+          {page === 'people' && <DigitalPeoplePage people={people} onGenerateAvatar={generateAvatarVideo} onGenerateTextAvatar={generateTextAvatarVideo} onUploadImage={uploadImage} onUploadAudio={uploadAvatarAudio} onRefreshAvatar={refreshAvatarVideo} onRemove={(id) => { setPeople((current) => current.filter((person) => person.id !== id)); void api.deletePerson(id).catch(() => undefined) }} />}
           {page === 'audio' && <AudioLibraryPage voices={voiceList} onUpload={uploadVoice} onClone={cloneVoice} onRemove={(ids) => { setVoiceList((current) => current.filter((voice) => !ids.includes(voice.id))); ids.forEach((id) => void api.deleteVoice(id).catch(() => undefined)) }} />}
         </main>
       </div>

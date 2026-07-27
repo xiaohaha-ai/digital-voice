@@ -80,7 +80,7 @@ button:focus-visible { outline: 2px solid #8cc9ff; outline-offset: 2px; }
 .field-line { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 16px; }
 .field-line label { color: #51657c; font-size: 14px; font-weight: 650; }
 .field-line input, .field-line select, .create-panel input { width: 100%; height: 42px; padding: 0 12px; border: 1px solid #d5dfec; border-radius: 6px; outline: none; color: var(--ink); background: #fff; }
-.field-line input:focus, .field-line select:focus, .create-panel input:focus, .generation-prompt:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(49,152,243,.12); }
+.field-line input:focus, .field-line select:focus, .create-panel input:focus, .create-panel textarea:focus, .generation-prompt:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(49,152,243,.12); }
 .optional-videos { display: flex; align-items: center; gap: 15px; padding: 18px; border: 1px solid #e1e8f1; border-radius: 8px; color: #67809e; }
 .optional-videos > div { flex: 1; display: grid; gap: 5px; }
 .optional-videos strong { color: var(--ink); font-size: 14px; }
@@ -160,6 +160,11 @@ button:focus-visible { outline: 2px solid #8cc9ff; outline-offset: 2px; }
 .generation-prompt { width: 100%; min-height: 88px; margin-top: 12px; padding: 10px 12px; resize: vertical; border: 1px solid #d5dfec; border-radius: 6px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 13px; line-height: 1.5; }
 .generation-prompt::placeholder { color: #9aa9ba; }
 .audio-file { width: 100%; height: 42px; display: flex; align-items: center; gap: 8px; margin: 12px 0; padding: 0 12px; border: 1px solid #d7e1ed; border-radius: 6px; color: #5a738f; background: #fff; font-size: 13px; text-align: left; }
+.script-input { display: grid; gap: 7px; margin-top: 13px; color: #526d89; font-size: 12px; font-weight: 650; }
+.script-input textarea { width: 100%; min-height: 96px; padding: 10px 11px; resize: vertical; border: 1px solid #d5dfec; border-radius: 6px; outline: 0; color: var(--ink); background: #fff; font: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; }
+.script-input textarea::placeholder { color: #9aa9ba; }
+.voice-choice { display: grid; gap: 7px; margin-top: 14px; color: #526d89; font-size: 12px; font-weight: 650; }
+.voice-choice small { color: #8799ac; font-size: 11px; font-weight: 400; line-height: 1.45; }
 .avatar-consent { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 14px; color: #6c7f95; font-size: 12px; line-height: 1.45; }
 .avatar-consent input { width: 14px; height: 14px; margin: 1px 0 0; accent-color: var(--blue); }
 .full { width: 100%; }
